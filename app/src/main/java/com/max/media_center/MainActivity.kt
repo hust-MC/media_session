@@ -72,6 +72,12 @@ class MainActivity : AppCompatActivity() {
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             updatePlayPauseButton(state?.state ?: PlaybackStateCompat.STATE_NONE)
         }
+
+        override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
+            metadata?.let {
+                titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
+            }
+        }
     }
 
     private fun updatePlayPauseButton(state: Int) {
