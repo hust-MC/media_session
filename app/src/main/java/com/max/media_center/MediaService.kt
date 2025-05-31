@@ -1,5 +1,7 @@
 package com.max.media_center
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -13,7 +15,7 @@ import androidx.media.MediaBrowserServiceCompat
 class MediaService : MediaBrowserServiceCompat() {
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var mediaPlayer: MediaPlayer
-    private var playbackState: PlaybackStateCompat? = null
+    private var currentState = PlaybackStateCompat.STATE_NONE
     
     companion object {
         private const val TAG = "MediaService"
@@ -22,71 +24,30 @@ class MediaService : MediaBrowserServiceCompat() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d("MCLOG", "MediaService onCreate")
         
-        // 初始化MediaSession
-        mediaSession = MediaSessionCompat(this, "MediaService")
-        mediaSession.setCallback(mediaSessionCallback)
-        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
+        // 创建MediaPlayer
+        mediaPlayer = MediaPlayer()
+        mediaPlayer.setDataSource(applicationContext, android.net.Uri.parse("android.resource://${packageName}/raw/jj"))
+        mediaPlayer.prepare()
+        
+        // 创建MediaSession
+        val sessionActivityPendingIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        mediaSession = MediaSessionCompat(this, "MediaService").apply {
+            setSessionActivity(sessionActivityPendingIntent)
+            setCallback(MediaSessionCallback())
+            isActive = true
+        }
         
         // 设置初始播放状态
-        playbackState = PlaybackStateCompat.Builder()
-            .setState(PlaybackStateCompat.STATE_NONE, 0, 1.0f)
-            .build()
-        mediaSession.setPlaybackState(playbackState)
+        updatePlaybackState()
         
-        // 设置SessionToken
         sessionToken = mediaSession.sessionToken
-        
-        // 初始化MediaPlayer
-        mediaPlayer = MediaPlayer()
-        mediaPlayer.setOnPreparedListener { mp ->
-            mp.start()
-            updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
-        }
-        mediaPlayer.setOnCompletionListener {
-            updatePlaybackState(PlaybackStateCompat.STATE_NONE)
-        }
-    }
-
-    private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
-        override fun onPlay() {
-            if (playbackState?.state == PlaybackStateCompat.STATE_PAUSED) {
-                mediaPlayer.start()
-                updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
-            }
-        }
-
-        override fun onPause() {
-            if (playbackState?.state == PlaybackStateCompat.STATE_PLAYING) {
-                mediaPlayer.pause()
-                updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
-            }
-        }
-
-        override fun onPlayFromUri(uri: Uri?, extras: Bundle?) {
-            try {
-                mediaPlayer.reset()
-                uri?.let { mediaPlayer.setDataSource(this@MediaService, it) }
-                mediaPlayer.prepare()
-                
-                // 更新元数据
-                extras?.getString("title")?.let { title ->
-                    val metadata = MediaMetadataCompat.Builder()
-                        .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-                        .build()
-                    mediaSession.setMetadata(metadata)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error playing from URI", e)
-            }
-        }
-    }
-
-    private fun updatePlaybackState(state: Int) {
-        playbackState = PlaybackStateCompat.Builder()
-            .setState(state, mediaPlayer.currentPosition.toLong(), 1.0f)
-            .build()
-        mediaSession.setPlaybackState(playbackState)
     }
 
     override fun onGetRoot(
@@ -94,36 +55,47 @@ class MediaService : MediaBrowserServiceCompat() {
         clientUid: Int,
         rootHints: Bundle?
     ): BrowserRoot? {
-        return BrowserRoot(MEDIA_ID_ROOT, null)
+        return BrowserRoot("root", null)
     }
 
     override fun onLoadChildren(
         parentId: String,
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
     ) {
-        result.detach()
-        
-        val mediaItems = mutableListOf<MediaBrowserCompat.MediaItem>()
-        
-        // 添加示例音乐
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, "1")
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "示例音乐")
-            .build()
-            
-        mediaItems.add(
-            MediaBrowserCompat.MediaItem(
-                metadata.description,
-                MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+        result.sendResult(null)
+    }
+
+    private fun updatePlaybackState() {
+        val stateBuilder = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PLAY or
+                PlaybackStateCompat.ACTION_PAUSE
             )
-        )
-        
-        result.sendResult(mediaItems)
+            .setState(currentState, 0, 1.0f)
+        mediaSession.setPlaybackState(stateBuilder.build())
+    }
+
+    private inner class MediaSessionCallback : MediaSessionCompat.Callback() {
+        override fun onPlay() {
+            if (currentState != PlaybackStateCompat.STATE_PLAYING) {
+                mediaPlayer.start()
+                currentState = PlaybackStateCompat.STATE_PLAYING
+                updatePlaybackState()
+            }
+        }
+
+        override fun onPause() {
+            if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+                mediaPlayer.pause()
+                currentState = PlaybackStateCompat.STATE_PAUSED
+                updatePlaybackState()
+            }
+        }
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        mediaPlayer.release()
         mediaSession.release()
+        mediaPlayer.release()
+        super.onDestroy()
     }
 } 
