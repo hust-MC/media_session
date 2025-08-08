@@ -99,8 +99,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayPauseButton(state: Int) {
         playPauseButton.setImageResource(when (state) {
-            PlaybackStateCompat.STATE_PLAYING -> android.R.drawable.ic_media_pause
-            else -> android.R.drawable.ic_media_play
+            PlaybackStateCompat.STATE_PLAYING -> R.drawable.ic_pause
+            else -> R.drawable.ic_play
         })
     }
 
