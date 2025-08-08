@@ -27,6 +27,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private var currentIndex = 0
     private val musicList = mutableListOf<MusicItem>()
     private var wakeLock: PowerManager.WakeLock? = null
+    private var currentPlayMode = PlayMode.SEQUENTIAL
 
     data class MusicItem(
         val name: String,
@@ -34,6 +35,12 @@ class MediaService : MediaBrowserServiceCompat() {
         var title: String = "",
         var artist: String = ""
     )
+
+    enum class PlayMode {
+        SEQUENTIAL,  // 顺序播放
+        SHUFFLE,     // 随机播放
+        REPEAT_ONE   // 单曲循环
+    }
 
     companion object {
         private const val TAG = "MediaService"
@@ -77,6 +84,19 @@ class MediaService : MediaBrowserServiceCompat() {
         updatePlaybackState()
         
         sessionToken = mediaSession.sessionToken
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "SWITCH_PLAY_MODE" -> {
+                switchPlayMode()
+                // 广播播放模式变化，让MainActivity更新UI
+                val broadcastIntent = Intent("PLAY_MODE_CHANGED")
+                broadcastIntent.putExtra("playMode", currentPlayMode.name)
+                sendBroadcast(broadcastIntent)
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun createNotificationChannel() {
@@ -168,13 +188,45 @@ class MediaService : MediaBrowserServiceCompat() {
 
     private fun playNext() {
         if (musicList.isEmpty()) return
-        playMusic((currentIndex + 1) % musicList.size)
+        when (currentPlayMode) {
+            PlayMode.SEQUENTIAL -> {
+                currentIndex = (currentIndex + 1) % musicList.size
+            }
+            PlayMode.SHUFFLE -> {
+                currentIndex = (0 until musicList.size).random()
+            }
+            PlayMode.REPEAT_ONE -> {
+                // 保持当前索引不变
+            }
+        }
+        playMusic(currentIndex)
     }
 
     private fun playPrevious() {
         if (musicList.isEmpty()) return
-        playMusic((currentIndex - 1 + musicList.size) % musicList.size)
+        when (currentPlayMode) {
+            PlayMode.SEQUENTIAL -> {
+                currentIndex = (currentIndex - 1 + musicList.size) % musicList.size
+            }
+            PlayMode.SHUFFLE -> {
+                currentIndex = (0 until musicList.size).random()
+            }
+            PlayMode.REPEAT_ONE -> {
+                // 保持当前索引不变
+            }
+        }
+        playMusic(currentIndex)
     }
+
+    fun switchPlayMode() {
+        currentPlayMode = when (currentPlayMode) {
+            PlayMode.SEQUENTIAL -> PlayMode.SHUFFLE
+            PlayMode.SHUFFLE -> PlayMode.REPEAT_ONE
+            PlayMode.REPEAT_ONE -> PlayMode.SEQUENTIAL
+        }
+    }
+
+    fun getCurrentPlayMode(): PlayMode = currentPlayMode
 
     override fun onGetRoot(
         clientPackageName: String,
