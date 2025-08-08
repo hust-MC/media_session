@@ -10,6 +10,8 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -18,6 +20,8 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
+import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.session.MediaButtonReceiver
 import java.lang.reflect.Field
 
 class MediaService : MediaBrowserServiceCompat() {
@@ -28,6 +32,8 @@ class MediaService : MediaBrowserServiceCompat() {
     private val musicList = mutableListOf<MusicItem>()
     private var wakeLock: PowerManager.WakeLock? = null
     private var currentPlayMode = PlayMode.SEQUENTIAL
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var progressUpdater: Runnable
 
     data class MusicItem(
         val name: String,
@@ -64,6 +70,14 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
         
+        // 初始化进度更新器
+        progressUpdater = Runnable {
+            if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+                updatePlaybackState()
+                handler.postDelayed(progressUpdater, 1000) // 每秒更新一次
+            }
+        }
+        
         // 创建MediaSession
         val sessionActivityPendingIntent = PendingIntent.getActivity(
             this, 0,
@@ -83,17 +97,29 @@ class MediaService : MediaBrowserServiceCompat() {
         // 设置初始播放状态
         updatePlaybackState()
         
+        // 创建初始通知，确保前台服务启动
+        updateNotification()
+        
         sessionToken = mediaSession.sessionToken
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand: ${intent?.action}")
+        
+        // 处理媒体按钮事件
+        MediaButtonReceiver.handleIntent(mediaSession, intent)
+        
         when (intent?.action) {
             "SWITCH_PLAY_MODE" -> {
+                Log.d(TAG, "Switching play mode from: $currentPlayMode")
                 switchPlayMode()
+                Log.d(TAG, "Switched play mode to: $currentPlayMode")
                 // 广播播放模式变化，让MainActivity更新UI
                 val broadcastIntent = Intent("PLAY_MODE_CHANGED")
                 broadcastIntent.putExtra("playMode", currentPlayMode.name)
+                broadcastIntent.setPackage(packageName) // 确保广播发送到本应用
                 sendBroadcast(broadcastIntent)
+                Log.d(TAG, "Broadcast sent: ${currentPlayMode.name}")
             }
         }
         return super.onStartCommand(intent, flags, startId)
@@ -118,13 +144,54 @@ class MediaService : MediaBrowserServiceCompat() {
         val title = musicItem?.title?.takeIf { it.isNotEmpty() } ?: musicItem?.name ?: "未知歌曲"
         val artist = musicItem?.artist?.takeIf { it.isNotEmpty() } ?: "未知艺术家"
         
+        // 创建播放/暂停动作
+        val playPauseAction = if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+            NotificationCompat.Action.Builder(
+                android.R.drawable.ic_media_pause,
+                "暂停",
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
+            ).build()
+        } else {
+            NotificationCompat.Action.Builder(
+                android.R.drawable.ic_media_play,
+                "播放", 
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
+            ).build()
+        }
+        
+        // 创建上一首动作
+        val prevAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_media_previous,
+            "上一首",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+        ).build()
+        
+        // 创建下一首动作
+        val nextAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_media_next,
+            "下一首",
+            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+        ).build()
+        
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
             .setSubText(if (currentState == PlaybackStateCompat.STATE_PLAYING) "正在播放" else "已暂停")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(mediaSession.controller.sessionActivity)
+            .setDeleteIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .addAction(prevAction)
+            .addAction(playPauseAction) 
+            .addAction(nextAction)
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2) // 显示所有3个按钮
+                    .setShowCancelButton(true)
+                    .setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP))
+            )
             .build()
 
         startForeground(NOTIFICATION_ID, notification)
@@ -169,6 +236,7 @@ class MediaService : MediaBrowserServiceCompat() {
             mediaPlayer.reset()
             mediaPlayer.setDataSource(applicationContext, Uri.parse("android.resource://${packageName}/raw/${musicItem.name}"))
             mediaPlayer.prepare()
+            val duration = mediaPlayer.duration.toLong()
             mediaPlayer.start()
             currentState = PlaybackStateCompat.STATE_PLAYING
             
@@ -176,11 +244,15 @@ class MediaService : MediaBrowserServiceCompat() {
             val metadata = MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
                 .build()
             mediaSession.setMetadata(metadata)
             
             updatePlaybackState()
             updateNotification()
+            
+            // 启动进度更新
+            handler.post(progressUpdater)
         } catch (e: Exception) {
             Log.e(TAG, "Error playing music", e)
         }
@@ -244,14 +316,20 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     private fun updatePlaybackState() {
+        val currentPosition = if (currentState == PlaybackStateCompat.STATE_PLAYING || currentState == PlaybackStateCompat.STATE_PAUSED) {
+            mediaPlayer.currentPosition.toLong()
+        } else {
+            0L
+        }
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
                 PlaybackStateCompat.ACTION_PAUSE or
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SEEK_TO
             )
-            .setState(currentState, 0, 1.0f)
+            .setState(currentState, currentPosition, 1.0f)
         mediaSession.setPlaybackState(stateBuilder.build())
         updateNotification()
     }
@@ -265,6 +343,7 @@ class MediaService : MediaBrowserServiceCompat() {
                     mediaPlayer.start()
                     currentState = PlaybackStateCompat.STATE_PLAYING
                     updatePlaybackState()
+                    handler.post(progressUpdater)
                 }
             }
         }
@@ -274,6 +353,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 mediaPlayer.pause()
                 currentState = PlaybackStateCompat.STATE_PAUSED
                 updatePlaybackState()
+                handler.removeCallbacks(progressUpdater)
             }
         }
 
@@ -284,9 +364,19 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onSkipToPrevious() {
             playPrevious()
         }
+
+        override fun onSeekTo(pos: Long) {
+            mediaPlayer.seekTo(pos.toInt())
+            updatePlaybackState()
+        }
+
+        override fun onStop() {
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(progressUpdater)
         mediaSession.release()
         mediaPlayer.release()
         wakeLock?.release()

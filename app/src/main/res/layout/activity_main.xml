@@ -122,15 +122,15 @@
 
         </LinearLayout>
 
-        <!-- 预留进度条区域 -->
+        <!-- 进度条区域 -->
         <LinearLayout
             android:id="@+id/progress_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="40dp"
+            android:layout_marginTop="32dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:visibility="gone">
+            android:visibility="visible">
             
             <TextView
                 android:id="@+id/current_time"

@@ -14,8 +14,10 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mediaBrowser: MediaBrowserCompat
@@ -27,12 +29,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playModeButton: ImageButton
     private lateinit var titleText: TextView
     private lateinit var artistText: TextView
+    private lateinit var seekBar: SeekBar
+    private lateinit var currentTimeText: TextView
+    private lateinit var totalTimeText: TextView
     
     private val playModeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d(TAG, "Broadcast received: ${intent?.action}")
             when (intent?.action) {
                 "PLAY_MODE_CHANGED" -> {
                     val playModeName = intent.getStringExtra("playMode")
+                    Log.d(TAG, "Play mode changed to: $playModeName")
                     updatePlayModeButton(playModeName)
                 }
             }
@@ -53,6 +60,9 @@ class MainActivity : AppCompatActivity() {
         playModeButton = findViewById(R.id.play_mode_button)
         titleText = findViewById(R.id.title_text)
         artistText = findViewById(R.id.artist_text)
+        seekBar = findViewById(R.id.progress_bar)
+        currentTimeText = findViewById(R.id.current_time)
+        totalTimeText = findViewById(R.id.total_time)
         titleText.text = "车载音乐播放器"
         artistText.text = "请选择歌曲"
         
@@ -91,11 +101,31 @@ class MainActivity : AppCompatActivity() {
         }
         
         playModeButton.setOnClickListener {
+            Log.d(TAG, "Play mode button clicked")
             // 通过MediaBrowser获取MediaService实例并切换播放模式
             val intent = Intent(this, MediaService::class.java)
             intent.action = "SWITCH_PLAY_MODE"
             startService(intent)
         }
+        
+        // 进度条拖动监听
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    // 用户拖动时更新当前时间显示
+                    currentTimeText.text = formatTime(progress.toLong())
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                // 开始拖动时可以暂停进度更新
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                // 停止拖动时跳转到指定位置
+                mediaController?.transportControls?.seekTo(seekBar?.progress?.toLong() ?: 0)
+            }
+        })
     }
 
     private val connectionCallback = object : MediaBrowserCompat.ConnectionCallback() {
@@ -122,12 +152,17 @@ class MainActivity : AppCompatActivity() {
     private val mediaControllerCallback = object : MediaControllerCompat.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             updatePlayPauseButton(state?.state ?: PlaybackStateCompat.STATE_NONE)
+            updateProgress(state)
         }
 
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             metadata?.let {
                 titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
                 artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知艺术家"
+                // 更新总时长
+                val duration = it.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
+                seekBar.max = duration.toInt()
+                totalTimeText.text = formatTime(duration)
             }
         }
     }
@@ -139,6 +174,12 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun updateProgress(state: PlaybackStateCompat?) {
+        val currentPosition = state?.position ?: 0
+        seekBar.progress = currentPosition.toInt()
+        currentTimeText.text = formatTime(currentPosition)
+    }
+
     private fun updatePlayModeButton(playModeName: String?) {
         val iconRes = when (playModeName) {
             "SEQUENTIAL" -> R.drawable.ic_repeat_all
@@ -147,6 +188,14 @@ class MainActivity : AppCompatActivity() {
             else -> R.drawable.ic_repeat_all
         }
         playModeButton.setImageResource(iconRes)
+    }
+
+    private fun formatTime(millis: Long): String {
+        return String.format("%02d:%02d",
+            TimeUnit.MILLISECONDS.toMinutes(millis),
+            TimeUnit.MILLISECONDS.toSeconds(millis) -
+                    TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis))
+        )
     }
 
     override fun onStart() {
