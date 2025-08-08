@@ -16,6 +16,8 @@ class MainActivity : AppCompatActivity() {
     private var mediaController: MediaControllerCompat? = null
     
     private lateinit var playPauseButton: Button
+    private lateinit var prevButton: Button
+    private lateinit var nextButton: Button
     private lateinit var titleText: TextView
     
     companion object {
@@ -27,6 +29,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         
         playPauseButton = findViewById(R.id.play_pause_button)
+        prevButton = findViewById(R.id.prev_button)
+        nextButton = findViewById(R.id.next_button)
         titleText = findViewById(R.id.title_text)
         titleText.text = "JJ - 不为谁而作的歌"
         
@@ -46,6 +50,14 @@ class MainActivity : AppCompatActivity() {
                     else -> controller.transportControls.play()
                 }
             }
+        }
+        
+        prevButton.setOnClickListener {
+            mediaController?.transportControls?.skipToPrevious()
+        }
+        
+        nextButton.setOnClickListener {
+            mediaController?.transportControls?.skipToNext()
         }
     }
 
