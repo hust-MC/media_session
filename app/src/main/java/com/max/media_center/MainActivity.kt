@@ -8,6 +8,7 @@ import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 
@@ -15,10 +16,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mediaBrowser: MediaBrowserCompat
     private var mediaController: MediaControllerCompat? = null
     
-    private lateinit var playPauseButton: Button
-    private lateinit var prevButton: Button
-    private lateinit var nextButton: Button
+    private lateinit var playPauseButton: ImageButton
+    private lateinit var prevButton: ImageButton
+    private lateinit var nextButton: ImageButton
     private lateinit var titleText: TextView
+    private lateinit var artistText: TextView
     
     companion object {
         private const val TAG = "MainActivity"
@@ -32,7 +34,9 @@ class MainActivity : AppCompatActivity() {
         prevButton = findViewById(R.id.prev_button)
         nextButton = findViewById(R.id.next_button)
         titleText = findViewById(R.id.title_text)
-        titleText.text = "JJ - 不为谁而作的歌"
+        artistText = findViewById(R.id.artist_text)
+        titleText.text = "车载音乐播放器"
+        artistText.text = "请选择歌曲"
         
         // 初始化MediaBrowser
         mediaBrowser = MediaBrowserCompat(
@@ -88,15 +92,16 @@ class MainActivity : AppCompatActivity() {
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             metadata?.let {
                 titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
+                artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知艺术家"
             }
         }
     }
 
     private fun updatePlayPauseButton(state: Int) {
-        playPauseButton.text = when (state) {
-            PlaybackStateCompat.STATE_PLAYING -> "暂停"
-            else -> "播放"
-        }
+        playPauseButton.setImageResource(when (state) {
+            PlaybackStateCompat.STATE_PLAYING -> android.R.drawable.ic_media_pause
+            else -> android.R.drawable.ic_media_play
+        })
     }
 
     override fun onStart() {
