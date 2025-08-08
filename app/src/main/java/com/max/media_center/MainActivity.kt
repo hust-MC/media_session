@@ -207,6 +207,10 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         mediaController?.unregisterCallback(mediaControllerCallback)
         mediaBrowser.disconnect()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
         try {
             unregisterReceiver(playModeReceiver)
         } catch (e: Exception) {
