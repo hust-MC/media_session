@@ -1,5 +1,6 @@
 package com.max.media_center
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -27,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prevButton: ImageButton
     private lateinit var nextButton: ImageButton
     private lateinit var playModeButton: ImageButton
+    private lateinit var playlistButton: ImageButton
     private lateinit var titleText: TextView
     private lateinit var artistText: TextView
     private lateinit var seekBar: SeekBar
@@ -50,14 +52,24 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // 启动后台服务以支持后台播放
+        val serviceIntent = Intent(this, MediaService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
         
         playPauseButton = findViewById(R.id.play_pause_button)
         prevButton = findViewById(R.id.prev_button)
         nextButton = findViewById(R.id.next_button)
         playModeButton = findViewById(R.id.play_mode_button)
+        playlistButton = findViewById(R.id.playlist_button)
         titleText = findViewById(R.id.title_text)
         artistText = findViewById(R.id.artist_text)
         seekBar = findViewById(R.id.progress_bar)
@@ -100,6 +112,11 @@ class MainActivity : AppCompatActivity() {
             mediaController?.transportControls?.skipToNext()
         }
         
+        playlistButton.setOnClickListener {
+            val intent = Intent(this, PlaylistActivity::class.java)
+            startActivity(intent)
+        }
+        
         playModeButton.setOnClickListener {
             Log.d(TAG, "Play mode button clicked")
             // 通过MediaBrowser获取MediaService实例并切换播放模式
@@ -107,7 +124,7 @@ class MainActivity : AppCompatActivity() {
             intent.action = "SWITCH_PLAY_MODE"
             startService(intent)
         }
-        
+
         // 进度条拖动监听
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
