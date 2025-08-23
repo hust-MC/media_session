@@ -111,6 +111,16 @@
                 android:contentDescription="下一首" />
 
             <ImageButton
+                android:id="@+id/playlist_button"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:layout_marginStart="16dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_playlist"
+                android:contentDescription="播放列表" />
+
+            <ImageButton
                 android:id="@+id/play_mode_button"
                 android:layout_width="60dp"
                 android:layout_height="60dp"
