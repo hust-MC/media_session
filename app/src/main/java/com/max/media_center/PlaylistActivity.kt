@@ -6,14 +6,16 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnectionListener {
     private lateinit var mediaBrowserHelper: MediaBrowserHelper
     private lateinit var recyclerView: RecyclerView
-    private val musicList = mutableListOf<MediaBrowserCompat.MediaItem>()
+    private lateinit var songAdapter: SongAdapter
     
     companion object {
         private const val TAG = "PlaylistActivity"
@@ -23,51 +25,49 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_playlist)
         
-        // 初始化RecyclerView
+        title = "播放列表"
+        
+        // 1. 初始化 RecyclerView
         recyclerView = findViewById(R.id.playlist_recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.addItemDecoration(DividerItemDecoration(this, DividerItemDecoration.VERTICAL))
         
-        // 初始化MediaBrowserHelper
+        // 2. 初始化 Adapter
+        songAdapter = SongAdapter()
+        recyclerView.adapter = songAdapter
+        
+        // 3. 初始化 MediaBrowserHelper 以获取数据
         mediaBrowserHelper = MediaBrowserHelper(this, this)
     }
     
-    // MediaConnectionListener 接口实现
+    // --- MediaBrowserHelper.MediaConnectionListener Callbacks ---
+
     override fun onConnected(controller: MediaControllerCompat) {
-        Log.d(TAG, "Connected to MediaService")
-        MediaControllerCompat.setMediaController(this, controller)
+        Log.d(TAG, "Media Service에 연결되었습니다.")
+        // 连接成功，可以进行其他操作
     }
     
     override fun onChildrenLoaded(items: List<MediaBrowserCompat.MediaItem>) {
-        Log.d(TAG, "Loaded ${items.size} music items")
-        musicList.clear()
-        musicList.addAll(items)
-        
-        // 这里暂时只打印日志，后续会更新RecyclerView
-        items.forEach { item ->
-            Log.d(TAG, "Music item: ${item.description.title} - ${item.description.subtitle}")
+        Log.d(TAG, "${items.size}개의 곡을 불러왔습니다.")
+        if (items.isEmpty()) {
+            Toast.makeText(this, "플레이리스트에 곡이 없습니다.", Toast.LENGTH_SHORT).show()
         }
+        // 4. 将获取到的数据更新到 Adapter
+        songAdapter.updateList(items)
     }
     
     override fun onConnectionFailed() {
-        Log.e(TAG, "Failed to connect to MediaService")
+        Log.e(TAG, "Media Service 연결에 실패했습니다.")
+        Toast.makeText(this, "서비스 연결에 실패했습니다.", Toast.LENGTH_SHORT).show()
     }
+
+    // 以下回调暂时不需要处理
+    override fun onConnectionSuspended() { Log.d(TAG, "Connection suspended") }
+    override fun onPlaybackStateChanged(state: PlaybackStateCompat?) { /* Do nothing for now */ }
+    override fun onMetadataChanged(metadata: MediaMetadataCompat?) { /* Do nothing for now */ }
     
-    override fun onConnectionSuspended() {
-        Log.d(TAG, "Connection to MediaService suspended")
-    }
-    
-    override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
-        // 后续用于更新UI，显示当前播放状态
-        Log.d(TAG, "Playback state changed: ${state?.state}")
-    }
-    
-    override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
-        // 后续用于高亮当前播放的歌曲
-        val title = metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
-        val mediaId = metadata?.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID)
-        Log.d(TAG, "Metadata changed: $title (ID: $mediaId)")
-    }
-    
+    // --- Activity Lifecycle ---
+
     override fun onStart() {
         super.onStart()
         mediaBrowserHelper.connect()
