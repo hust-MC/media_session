@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -61,6 +62,7 @@ class MediaService : MediaBrowserServiceCompat() {
         
         // 获取raw目录下的所有音频文件
         loadMusicList()
+        Log.d(TAG, "MediaService loaded ${musicList.size} music items")
         
         // 创建MediaPlayer
         mediaPlayer = MediaPlayer().apply {
@@ -304,15 +306,32 @@ class MediaService : MediaBrowserServiceCompat() {
         clientPackageName: String,
         clientUid: Int,
         rootHints: Bundle?
-    ): BrowserRoot? {
-        return BrowserRoot("root", null)
+    ): BrowserRoot {
+        return BrowserRoot(MEDIA_ID_ROOT, null)
     }
 
     override fun onLoadChildren(
         parentId: String,
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
     ) {
-        result.sendResult(null)
+        Log.d(TAG, "onLoadChildren called with parentId: $parentId")
+        
+        if (parentId == MEDIA_ID_ROOT) {
+            val mediaItems = musicList.map { musicItem ->
+                val description = MediaDescriptionCompat.Builder()
+                    .setMediaId(musicItem.resourceId.toString())
+                    .setTitle(musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
+                    .setSubtitle(musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
+                    .build()
+                MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
+            }.toMutableList()
+            
+            Log.d(TAG, "Returning ${mediaItems.size} items to client")
+            result.sendResult(mediaItems)
+        } else {
+            Log.d(TAG, "Unknown parentId: $parentId, returning null")
+            result.sendResult(null)
+        }
     }
 
     private fun updatePlaybackState() {
