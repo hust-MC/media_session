@@ -8,15 +8,25 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
 /**
- * A simple adapter to display a list of song titles.
- * This adapter has no click handling or playback state logic.
+ * Adapter to display a list of songs with click handling.
  */
-class SongAdapter : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
+class SongAdapter(
+    private val onItemClick: (MediaBrowserCompat.MediaItem) -> Unit
+) : RecyclerView.Adapter<SongAdapter.SongViewHolder>() {
 
     private var songList = emptyList<MediaBrowserCompat.MediaItem>()
 
-    class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    inner class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val titleTextView: TextView = itemView.findViewById(R.id.song_title)
+        
+        init {
+            itemView.setOnClickListener {
+                val position = adapterPosition
+                if (position != RecyclerView.NO_POSITION) {
+                    onItemClick(songList[position])
+                }
+            }
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {

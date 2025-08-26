@@ -32,8 +32,16 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.addItemDecoration(DividerItemDecoration(this, DividerItemDecoration.VERTICAL))
         
-        // 2. 初始化 Adapter
-        songAdapter = SongAdapter()
+        // 2. 初始化 Adapter，设置点击事件处理
+        songAdapter = SongAdapter { mediaItem ->
+            // 当用户点击某首歌曲时，通过 mediaId 播放它
+            Log.d(TAG, "User clicked on: ${mediaItem.description.title}")
+            val mediaId = mediaItem.mediaId
+            if (mediaId != null) {
+                mediaBrowserHelper.getTransportControls()?.playFromMediaId(mediaId, null)
+                Toast.makeText(this, "正在播放: ${mediaItem.description.title}", Toast.LENGTH_SHORT).show()
+            }
+        }
         recyclerView.adapter = songAdapter
         
         // 3. 初始化 MediaBrowserHelper 以获取数据

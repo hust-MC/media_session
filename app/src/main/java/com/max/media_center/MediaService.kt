@@ -383,6 +383,18 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onSkipToPrevious() {
             playPrevious()
         }
+        
+        override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+            Log.d(TAG, "onPlayFromMediaId called with mediaId: $mediaId")
+            mediaId?.toIntOrNull()?.let { resourceId ->
+                val index = musicList.indexOfFirst { it.resourceId == resourceId }
+                if (index != -1) {
+                    playMusic(index)
+                } else {
+                    Log.e(TAG, "Song with resourceId $resourceId not found in playlist")
+                }
+            }
+        }
 
         override fun onSeekTo(pos: Long) {
             mediaPlayer.seekTo(pos.toInt())
