@@ -244,6 +244,7 @@ class MediaService : MediaBrowserServiceCompat() {
             
             // 更新元数据
             val metadata = MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, musicItem.resourceId.toString())
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
