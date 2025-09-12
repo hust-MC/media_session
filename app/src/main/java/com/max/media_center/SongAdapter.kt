@@ -20,7 +20,9 @@ class SongAdapter(
 
     inner class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val titleTextView: TextView = itemView.findViewById(R.id.song_title)
-        
+        // 在ViewHolder创建时，捕获并存储TextView的默认文字颜色
+        val defaultTextColor: Int = titleTextView.currentTextColor
+
         init {
             itemView.setOnClickListener {
                 val position = adapterPosition
@@ -47,11 +49,11 @@ class SongAdapter(
 
         // 根据是否为当前播放歌曲来设置颜色
         if (songItem.mediaId == currentPlayingMediaId) {
-            // 设置为高亮颜色（例如，主题的 accent color）
-            holder.titleTextView.setTextColor(ContextCompat.getColor(holder.itemView.context, R.color.purple_500))
+            // 3. 正在播放的颜色改成绿色
+            holder.titleTextView.setTextColor(ContextCompat.getColor(holder.itemView.context, android.R.color.holo_green_dark))
         } else {
-            // 设置为默认颜色
-            holder.titleTextView.setTextColor(ContextCompat.getColor(holder.itemView.context, android.R.color.white))
+            // 2. 看不到列表的文字，恢复为ViewHolder中存储的默认颜色
+            holder.titleTextView.setTextColor(holder.defaultTextColor)
         }
     }
 
