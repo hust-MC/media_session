@@ -13,7 +13,6 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
-import android.widget.Button
 import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
@@ -145,14 +144,72 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * Activity生命周期方法：当Activity变为可见时调用。
+     * 我们的策略是：
+     * 1. 如果尚未连接到MediaBrowserService，则发起连接。
+     * 2. 如果已经连接（例如从播放列表返回），则重新注册回调并立即同步UI状态。
+     */
+    override fun onStart() {
+        super.onStart()
+        if (!mediaBrowser.isConnected) {
+            mediaBrowser.connect()
+        } else if (mediaController != null) {
+            // 如果已连接，重新注册回调并同步UI
+            mediaController?.registerCallback(mediaControllerCallback)
+            mediaControllerCallback.onPlaybackStateChanged(mediaController?.playbackState)
+            mediaControllerCallback.onMetadataChanged(mediaController?.metadata)
+        }
+    }
+
+    /**
+     * Activity生命周期方法：当Activity不再可见时调用。
+     * 我们在这里注销回调，以防止在Activity不可见时更新UI，从而避免内存泄漏和不必要的资源消耗。
+     * 我们不在此处断开连接，以保持后台播放并能快速恢复。
+     */
+    override fun onStop() {
+        super.onStop()
+        // 当Activity不可见时，注销回调以避免内存泄漏和不必要的工作
+        mediaController?.unregisterCallback(mediaControllerCallback)
+    }
+    
+    /**
+     * Activity生命周期方法：当Activity被销毁时调用。
+     * 这是断开与MediaBrowserService连接的正确时机。
+     */
+    override fun onDestroy() {
+        super.onDestroy()
+        // 在Activity销毁时才断开连接
+        if (mediaBrowser.isConnected) {
+            mediaBrowser.disconnect()
+        }
+        try {
+            unregisterReceiver(playModeReceiver)
+        } catch (e: Exception) {
+            // 忽略已经注销的异常
+        }
+    }
+
+    /**
+     * MediaBrowser连接状态的回调接口。
+     */
     private val connectionCallback = object : MediaBrowserCompat.ConnectionCallback() {
+        /**
+         * 当成功连接到MediaBrowserService时调用。
+         * 这是初始化MediaController并首次同步UI状态的关键点。
+         */
         override fun onConnected() {
-            mediaController = MediaControllerCompat(this@MainActivity, mediaBrowser.sessionToken).apply {
-                registerCallback(mediaControllerCallback)
+            if (mediaController == null) {
+                // MediaController是UI和MediaSession之间的桥梁
+                mediaController = MediaControllerCompat(this@MainActivity, mediaBrowser.sessionToken)
+                MediaControllerCompat.setMediaController(this@MainActivity, mediaController)
             }
-            MediaControllerCompat.setMediaController(this@MainActivity, mediaController)
-            updatePlayPauseButton(mediaController?.playbackState?.state ?: PlaybackStateCompat.STATE_NONE)
-            // 初始化播放模式按钮
+            // 注册回调以接收来自MediaSession的状态变化
+            mediaController?.registerCallback(mediaControllerCallback)
+            
+            // 手动调用一次回调方法，以确保UI立即反映当前的播放状态
+            mediaControllerCallback.onPlaybackStateChanged(mediaController?.playbackState)
+            mediaControllerCallback.onMetadataChanged(mediaController?.metadata)
             updatePlayModeButton("SEQUENTIAL")
         }
 
@@ -166,12 +223,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * MediaController的回调接口，用于接收来自MediaSession的状态更新。
+     * 无论Activity是否在前台，只要回调被注册，这些方法就会在播放状态或元数据变化时被调用。
+     */
     private val mediaControllerCallback = object : MediaControllerCompat.Callback() {
+        /**
+         * 当播放状态（播放、暂停、缓冲等）改变时调用。
+         */
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             updatePlayPauseButton(state?.state ?: PlaybackStateCompat.STATE_NONE)
             updateProgress(state)
         }
 
+        /**
+         * 当正在播放的媒体项目元数据（歌曲标题、艺术家、时长等）改变时调用。
+         */
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             metadata?.let {
                 titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
@@ -213,25 +280,5 @@ class MainActivity : AppCompatActivity() {
             TimeUnit.MILLISECONDS.toSeconds(millis) -
                     TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis))
         )
-    }
-
-    override fun onStart() {
-        super.onStart()
-        mediaBrowser.connect()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        mediaController?.unregisterCallback(mediaControllerCallback)
-        mediaBrowser.disconnect()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(playModeReceiver)
-        } catch (e: Exception) {
-            // 忽略已经注销的异常
-        }
     }
 } 
