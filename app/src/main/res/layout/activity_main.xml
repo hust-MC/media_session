@@ -13,7 +13,6 @@
         android:layout_height="0dp"
         android:orientation="vertical"
         android:gravity="center"
-        android:layout_marginEnd="32dp"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toStartOf="@id/control_section"
         app:layout_constraintTop_toTopOf="parent"
@@ -62,27 +61,28 @@
         android:id="@+id/control_section"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:orientation="vertical"
         android:gravity="center"
-        app:layout_constraintStart_toEndOf="@id/album_info_container"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
+        android:orientation="vertical"
+        android:layout_marginEnd="24dp"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/album_info_container"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintWidth_percent="0.6">
 
         <!-- 播放控制按钮 -->
         <LinearLayout
             android:id="@+id/control_container"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center">
 
             <ImageButton
                 android:id="@+id/prev_button"
-                android:layout_width="80dp"
-                android:layout_height="80dp"
-                android:layout_marginEnd="24dp"
+                android:layout_width="0dp"
+                android:layout_height="70dp"
+                android:layout_weight="1"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_previous"
@@ -90,10 +90,9 @@
 
             <ImageButton
                 android:id="@+id/play_pause_button"
-                android:layout_width="100dp"
-                android:layout_height="100dp"
-                android:layout_marginStart="24dp"
-                android:layout_marginEnd="24dp"
+                android:layout_width="0dp"
+                android:layout_height="90dp"
+                android:layout_weight="1"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_play"
@@ -101,10 +100,9 @@
 
             <ImageButton
                 android:id="@+id/next_button"
-                android:layout_width="80dp"
-                android:layout_height="80dp"
-                android:layout_marginStart="24dp"
-                android:layout_marginEnd="16dp"
+                android:layout_width="0dp"
+                android:layout_height="70dp"
+                android:layout_weight="1"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_next"
@@ -112,9 +110,9 @@
 
             <ImageButton
                 android:id="@+id/playlist_button"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:layout_marginStart="16dp"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="1"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_playlist"
@@ -122,9 +120,9 @@
 
             <ImageButton
                 android:id="@+id/play_mode_button"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:layout_marginStart="16dp"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="1"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_repeat_all"
@@ -140,6 +138,8 @@
             android:layout_marginTop="32dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:visibility="visible">
             
             <TextView
@@ -155,8 +155,8 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp" />
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp" />
             
             <TextView
                 android:id="@+id/total_time"
