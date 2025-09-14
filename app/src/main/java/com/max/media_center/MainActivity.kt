@@ -14,6 +14,7 @@ import android.support.v4.media.session.MediaControllerCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -30,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playlistButton: ImageButton
     private lateinit var titleText: TextView
     private lateinit var artistText: TextView
+    private lateinit var albumArt: ImageView
     private lateinit var seekBar: SeekBar
     private lateinit var currentTimeText: TextView
     private lateinit var totalTimeText: TextView
@@ -71,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         playlistButton = findViewById(R.id.playlist_button)
         titleText = findViewById(R.id.title_text)
         artistText = findViewById(R.id.artist_text)
+        albumArt = findViewById(R.id.album_art_placeholder)
         seekBar = findViewById(R.id.progress_bar)
         currentTimeText = findViewById(R.id.current_time)
         totalTimeText = findViewById(R.id.total_time)
@@ -243,6 +246,16 @@ class MainActivity : AppCompatActivity() {
             metadata?.let {
                 titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
                 artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知艺术家"
+                
+                // 显示专辑封面
+                val art = it.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
+                if (art != null) {
+                    albumArt.setImageBitmap(art)
+                } else {
+                    // 如果没有封面，显示一个默认的占位图或颜色
+                    albumArt.setImageResource(android.R.drawable.ic_menu_gallery)
+                }
+                
                 // 更新总时长
                 val duration = it.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
                 seekBar.max = duration.toInt()

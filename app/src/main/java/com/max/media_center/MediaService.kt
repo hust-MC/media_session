@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
@@ -40,7 +42,8 @@ class MediaService : MediaBrowserServiceCompat() {
         val name: String,
         val resourceId: Int,
         var title: String = "",
-        var artist: String = ""
+        var artist: String = "",
+        var coverArt: Bitmap? = null
     )
 
     enum class PlayMode {
@@ -216,6 +219,12 @@ class MediaService : MediaBrowserServiceCompat() {
                     musicItem.title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
                     musicItem.artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
                     
+                    // 提取专辑封面
+                    val artBytes = retriever.embeddedPicture
+                    if (artBytes != null) {
+                        musicItem.coverArt = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size)
+                    }
+                    
                     retriever.release()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error getting metadata for $resourceName", e)
@@ -248,6 +257,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, musicItem.coverArt)
                 .build()
             mediaSession.setMetadata(metadata)
             
@@ -323,6 +333,7 @@ class MediaService : MediaBrowserServiceCompat() {
                     .setMediaId(musicItem.resourceId.toString())
                     .setTitle(musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
                     .setSubtitle(musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
+                    .setIconBitmap(musicItem.coverArt)
                     .build()
                 MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
             }.toMutableList()
