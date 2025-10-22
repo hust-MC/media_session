@@ -57,21 +57,29 @@ class MediaService : MediaBrowserServiceCompat() {
         private const val MEDIA_ID_ROOT = "__ROOT__"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "media_playback_channel"
+        private const val PROGRESS_UPDATE_INTERVAL = 1000L // 进度更新间隔（毫秒）
+        private const val IMAGE_COMPRESSION_RATIO = 2 // 图片压缩比例
     }
 
     override fun onCreate() {
         super.onCreate()
-        Log.d("MCLOG", "MediaService onCreate")
+        Log.d(TAG, "MediaService onCreate")
         
         // 获取raw目录下的所有音频文件
         loadMusicList()
         Log.d(TAG, "MediaService loaded ${musicList.size} music items")
         
-        // 创建MediaPlayer
+        // 创建MediaPlayer并配置
         mediaPlayer = MediaPlayer().apply {
             setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
             setOnCompletionListener {
                 playNext()
+            }
+            setOnErrorListener { _, what, extra ->
+                Log.e(TAG, "MediaPlayer error: $what, $extra")
+                currentState = PlaybackStateCompat.STATE_ERROR
+                updatePlaybackState()
+                true // 返回true表示已处理错误
             }
         }
         
@@ -79,7 +87,7 @@ class MediaService : MediaBrowserServiceCompat() {
         progressUpdater = Runnable {
             if (currentState == PlaybackStateCompat.STATE_PLAYING) {
                 updatePlaybackState()
-                handler.postDelayed(progressUpdater, 1000) // 每秒更新一次
+                handler.postDelayed(progressUpdater, PROGRESS_UPDATE_INTERVAL)
             }
         }
         
@@ -115,12 +123,12 @@ class MediaService : MediaBrowserServiceCompat() {
         MediaButtonReceiver.handleIntent(mediaSession, intent)
         
         when (intent?.action) {
-            "SWITCH_PLAY_MODE" -> {
+            getString(R.string.action_switch_play_mode) -> {
                 Log.d(TAG, "Switching play mode from: $currentPlayMode")
                 switchPlayMode()
                 Log.d(TAG, "Switched play mode to: $currentPlayMode")
                 // 广播播放模式变化，让MainActivity更新UI
-                val broadcastIntent = Intent("PLAY_MODE_CHANGED")
+                val broadcastIntent = Intent(getString(R.string.action_play_mode_changed))
                 broadcastIntent.putExtra("playMode", currentPlayMode.name)
                 broadcastIntent.setPackage(packageName) // 确保广播发送到本应用
                 sendBroadcast(broadcastIntent)
@@ -130,36 +138,44 @@ class MediaService : MediaBrowserServiceCompat() {
         return super.onStartCommand(intent, flags, startId)
     }
 
+    /**
+     * 创建通知渠道
+     * 在Android 8.0及以上版本中，需要创建通知渠道才能显示通知
+     */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Media Playback",
+                getString(R.string.media_playback_channel),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Media playback controls"
+                description = getString(R.string.media_playback_channel_description)
             }
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
 
+    /**
+     * 更新通知栏显示
+     * 显示当前播放的歌曲信息和播放控制按钮
+     */
     private fun updateNotification() {
         val musicItem = musicList.getOrNull(currentIndex)
-        val title = musicItem?.title?.takeIf { it.isNotEmpty() } ?: musicItem?.name ?: "未知歌曲"
-        val artist = musicItem?.artist?.takeIf { it.isNotEmpty() } ?: "未知艺术家"
+        val title = musicItem?.title?.takeIf { it.isNotEmpty() } ?: musicItem?.name ?: getString(R.string.unknown_song)
+        val artist = musicItem?.artist?.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist)
         
         // 创建播放/暂停动作
         val playPauseAction = if (currentState == PlaybackStateCompat.STATE_PLAYING) {
             NotificationCompat.Action.Builder(
                 android.R.drawable.ic_media_pause,
-                "暂停",
+                getString(R.string.pause),
                 MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
             ).build()
         } else {
             NotificationCompat.Action.Builder(
                 android.R.drawable.ic_media_play,
-                "播放", 
+                getString(R.string.play), 
                 MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
             ).build()
         }
@@ -167,21 +183,21 @@ class MediaService : MediaBrowserServiceCompat() {
         // 创建上一首动作
         val prevAction = NotificationCompat.Action.Builder(
             android.R.drawable.ic_media_previous,
-            "上一首",
+            getString(R.string.previous),
             MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
         ).build()
         
         // 创建下一首动作
         val nextAction = NotificationCompat.Action.Builder(
             android.R.drawable.ic_media_next,
-            "下一首",
+            getString(R.string.next),
             MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
         ).build()
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSubText(if (currentState == PlaybackStateCompat.STATE_PLAYING) "正在播放" else "已暂停")
+            .setSubText(if (currentState == PlaybackStateCompat.STATE_PLAYING) getString(R.string.now_playing) else getString(R.string.paused))
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(mediaSession.controller.sessionActivity)
             .setDeleteIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP))
@@ -219,10 +235,13 @@ class MediaService : MediaBrowserServiceCompat() {
                     musicItem.title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
                     musicItem.artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
                     
-                    // 提取专辑封面
+                    // 提取专辑封面并压缩
                     val artBytes = retriever.embeddedPicture
                     if (artBytes != null) {
-                        musicItem.coverArt = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size)
+                        val options = BitmapFactory.Options().apply {
+                            inSampleSize = IMAGE_COMPRESSION_RATIO // 压缩图片，避免内存溢出
+                        }
+                        musicItem.coverArt = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, options)
                     }
                     
                     retriever.release()

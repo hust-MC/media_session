@@ -45,14 +45,14 @@ class SongAdapter(
 
     override fun onBindViewHolder(holder: SongViewHolder, position: Int) {
         val songItem = songList[position]
-        holder.titleTextView.text = songItem.description.title ?: "未知歌曲"
+        holder.titleTextView.text = songItem.description.title ?: holder.itemView.context.getString(R.string.unknown_song)
 
         // 根据是否为当前播放歌曲来设置颜色
         if (songItem.mediaId == currentPlayingMediaId) {
-            // 3. 正在播放的颜色改成绿色
+            // 正在播放的歌曲用绿色高亮显示
             holder.titleTextView.setTextColor(ContextCompat.getColor(holder.itemView.context, android.R.color.holo_green_dark))
         } else {
-            // 2. 看不到列表的文字，恢复为ViewHolder中存储的默认颜色
+            // 其他歌曲使用默认颜色
             holder.titleTextView.setTextColor(holder.defaultTextColor)
         }
     }

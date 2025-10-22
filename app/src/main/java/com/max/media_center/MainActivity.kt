@@ -40,7 +40,7 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             Log.d(TAG, "Broadcast received: ${intent?.action}")
             when (intent?.action) {
-                "PLAY_MODE_CHANGED" -> {
+                getString(R.string.action_play_mode_changed) -> {
                     val playModeName = intent.getStringExtra("playMode")
                     Log.d(TAG, "Play mode changed to: $playModeName")
                     updatePlayModeButton(playModeName)
@@ -77,11 +77,11 @@ class MainActivity : AppCompatActivity() {
         seekBar = findViewById(R.id.progress_bar)
         currentTimeText = findViewById(R.id.current_time)
         totalTimeText = findViewById(R.id.total_time)
-        titleText.text = "车载音乐播放器"
-        artistText.text = "请选择歌曲"
+        titleText.text = getString(R.string.car_media_player)
+        artistText.text = getString(R.string.please_select_song)
         
         // 注册广播接收器
-        val filter = IntentFilter("PLAY_MODE_CHANGED")
+        val filter = IntentFilter(getString(R.string.action_play_mode_changed))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(playModeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Play mode button clicked")
             // 通过MediaBrowser获取MediaService实例并切换播放模式
             val intent = Intent(this, MediaService::class.java)
-            intent.action = "SWITCH_PLAY_MODE"
+            intent.action = getString(R.string.action_switch_play_mode)
             startService(intent)
         }
 
@@ -244,8 +244,8 @@ class MainActivity : AppCompatActivity() {
          */
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             metadata?.let {
-                titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: "未知歌曲"
-                artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: "未知艺术家"
+                titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: getString(R.string.unknown_song)
+                artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: getString(R.string.unknown_artist)
                 
                 // 显示专辑封面
                 val art = it.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
@@ -287,8 +287,13 @@ class MainActivity : AppCompatActivity() {
         playModeButton.setImageResource(iconRes)
     }
 
+    /**
+     * 格式化时间显示
+     * @param millis 毫秒数
+     * @return 格式化的时间字符串 (MM:SS)
+     */
     private fun formatTime(millis: Long): String {
-        return String.format("%02d:%02d",
+        return String.format(getString(R.string.time_format),
             TimeUnit.MILLISECONDS.toMinutes(millis),
             TimeUnit.MILLISECONDS.toSeconds(millis) -
                     TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(millis))

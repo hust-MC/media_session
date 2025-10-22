@@ -25,7 +25,7 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_playlist)
         
-        title = "播放列表"
+        title = getString(R.string.playlist_title)
         
         // 1. 初始化 RecyclerView
         recyclerView = findViewById(R.id.playlist_recycler_view)
@@ -39,7 +39,7 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
             val mediaId = mediaItem.mediaId
             if (mediaId != null) {
                 mediaBrowserHelper.getTransportControls()?.playFromMediaId(mediaId, null)
-                Toast.makeText(this, "正在播放: ${mediaItem.description.title}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.now_playing_format, mediaItem.description.title), Toast.LENGTH_SHORT).show()
             }
         }
         recyclerView.adapter = songAdapter
@@ -61,15 +61,15 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
     override fun onChildrenLoaded(items: List<MediaBrowserCompat.MediaItem>) {
         Log.d(TAG, "${items.size}개의 곡을 불러왔습니다.")
         if (items.isEmpty()) {
-            Toast.makeText(this, "플레이리스트에 곡이 없습니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.playlist_empty), Toast.LENGTH_SHORT).show()
         }
         // 4. 将获取到的数据更新到 Adapter
         songAdapter.updateList(items)
     }
     
     override fun onConnectionFailed() {
-        Log.e(TAG, "Media Service 연결에 실패했습니다.")
-        Toast.makeText(this, "서비스 연결에 실패했습니다.", Toast.LENGTH_SHORT).show()
+        Log.e(TAG, "Media Service connection failed")
+        Toast.makeText(this, getString(R.string.connection_failed), Toast.LENGTH_SHORT).show()
     }
 
     override fun onConnectionSuspended() { Log.d(TAG, "Connection suspended") }

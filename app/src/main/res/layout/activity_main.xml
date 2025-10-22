@@ -4,20 +4,20 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#F5F5F5"
-    android:padding="24dp">
+    android:padding="50dp">
 
     <!-- 左侧区域：专辑信息 -->
     <LinearLayout
+        android:layout_marginStart="20dp"
         android:id="@+id/album_info_container"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toStartOf="@id/control_section"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintWidth_percent="0.4">
+        app:layout_constraintBottom_toBottomOf="parent">
 
         <ImageView
             android:id="@+id/album_art_placeholder"
@@ -29,14 +29,14 @@
 
         <TextView
             android:id="@+id/title_text"
-            android:layout_width="match_parent"
+            android:layout_width="200dp"
             android:layout_height="wrap_content"
             android:layout_marginBottom="8dp"
             android:gravity="center"
             android:textSize="24sp"
             android:textStyle="bold"
             android:textColor="#222222"
-            android:text="无标题"
+            android:text="@string/no_title"
             android:ellipsize="marquee"
             android:singleLine="true"
             android:marqueeRepeatLimit="marquee_forever"
@@ -45,12 +45,12 @@
 
         <TextView
             android:id="@+id/artist_text"
-            android:layout_width="match_parent"
+            android:layout_width="200dp"
             android:layout_height="wrap_content"
             android:gravity="center"
             android:textSize="18sp"
             android:textColor="#666666"
-            android:text="未知艺术家"
+            android:text="@string/unknown_artist"
             android:ellipsize="end"
             android:singleLine="true" />
 
@@ -61,14 +61,13 @@
         android:id="@+id/control_section"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginStart="120dp"
         android:gravity="center"
         android:orientation="vertical"
-        android:layout_marginEnd="24dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/album_info_container"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintWidth_percent="0.6">
+        app:layout_constraintTop_toTopOf="parent">
 
         <!-- 播放控制按钮 -->
         <LinearLayout
@@ -86,7 +85,7 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_previous"
-                android:contentDescription="上一首" />
+                android:contentDescription="@string/previous" />
 
             <ImageButton
                 android:id="@+id/play_pause_button"
@@ -96,7 +95,7 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_play"
-                android:contentDescription="播放" />
+                android:contentDescription="@string/play" />
 
             <ImageButton
                 android:id="@+id/next_button"
@@ -106,7 +105,7 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_next"
-                android:contentDescription="下一首" />
+                android:contentDescription="@string/next" />
 
             <ImageButton
                 android:id="@+id/playlist_button"
@@ -116,7 +115,7 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_playlist"
-                android:contentDescription="播放列表" />
+                android:contentDescription="@string/playlist" />
 
             <ImageButton
                 android:id="@+id/play_mode_button"
@@ -126,7 +125,7 @@
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_repeat_all"
-                android:contentDescription="播放模式" />
+                android:contentDescription="@string/play_mode" />
 
         </LinearLayout>
 

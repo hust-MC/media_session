@@ -1,3 +1,54 @@
 <resources>
-    <string name="app_name">media_center</string>
+    <string name="app_name">车载音乐播放器</string>
+    
+    <!-- 主界面文本 -->
+    <string name="unknown_song">未知歌曲</string>
+    <string name="unknown_artist">未知艺术家</string>
+    <string name="no_title">无标题</string>
+    <string name="car_media_player">车载音乐播放器</string>
+    <string name="please_select_song">请选择歌曲</string>
+    
+    <!-- 播放控制 -->
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="previous">上一首</string>
+    <string name="next">下一首</string>
+    <string name="playlist">播放列表</string>
+    <string name="play_mode">播放模式</string>
+    
+    <!-- 播放模式 -->
+    <string name="sequential_mode">顺序播放</string>
+    <string name="shuffle_mode">随机播放</string>
+    <string name="repeat_one_mode">单曲循环</string>
+    
+    <!-- 播放状态 -->
+    <string name="now_playing">正在播放</string>
+    <string name="paused">已暂停</string>
+    <string name="stopped">已停止</string>
+    
+    <!-- 通知 -->
+    <string name="media_playback_channel">媒体播放</string>
+    <string name="media_playback_channel_description">媒体播放控制</string>
+    
+    <!-- 播放列表 -->
+    <string name="playlist_title">播放列表</string>
+    <string name="playlist_empty">播放列表为空</string>
+    <string name="now_playing_format">正在播放: %s</string>
+    <string name="connection_failed">服务连接失败</string>
+    
+    <!-- 时间格式 -->
+    <string name="time_format">%02d:%02d</string>
+    
+    <!-- 广播动作 -->
+    <string name="action_play_mode_changed">PLAY_MODE_CHANGED</string>
+    <string name="action_switch_play_mode">SWITCH_PLAY_MODE</string>
+    
+    <!-- 常量 -->
+    <string name="media_id_root">__ROOT__</string>
+    <string name="notification_channel_id">media_playback_channel</string>
+    <string name="media_service_tag">MediaService</string>
+    <string name="main_activity_tag">MainActivity</string>
+    <string name="playlist_activity_tag">PlaylistActivity</string>
+    <string name="media_browser_helper_tag">MediaBrowserHelper</string>
+    <string name="song_adapter_tag">SongAdapter</string>
 </resources>
