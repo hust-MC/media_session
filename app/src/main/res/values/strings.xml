@@ -42,6 +42,16 @@
     <!-- 广播动作 -->
     <string name="action_play_mode_changed">PLAY_MODE_CHANGED</string>
     <string name="action_switch_play_mode">SWITCH_PLAY_MODE</string>
+    <string name="action_error_occurred">ERROR_OCCURRED</string>
+    
+    <!-- 错误提示 -->
+    <string name="error_playback_failed">播放失败，请重试</string>
+    <string name="error_load_music_list_failed">无法加载音乐列表</string>
+    <string name="error_play_music_failed">无法播放该歌曲</string>
+    <string name="error_song_not_found">歌曲不存在</string>
+    <string name="error_playlist_empty_operation">播放列表为空</string>
+    <string name="error_connection_suspended">服务连接已中断，正在重新连接...</string>
+    <string name="error_load_media_failed">加载媒体列表失败</string>
     
     <!-- 常量 -->
     <string name="media_id_root">__ROOT__</string>

@@ -17,6 +17,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.max.media_center.MediaService.PlayMode.SEQUENTIAL
 import com.max.media_center.MediaService.PlayMode.SHUFFLE
@@ -228,11 +229,13 @@ class MainActivity : AppCompatActivity() {
 
         override fun onConnectionFailed() {
             mediaController = null
+            Toast.makeText(this@MainActivity, getString(R.string.connection_failed), Toast.LENGTH_SHORT).show()
         }
 
         override fun onConnectionSuspended() {
             mediaController?.unregisterCallback(mediaControllerCallback)
             mediaController = null
+            Toast.makeText(this@MainActivity, getString(R.string.error_connection_suspended), Toast.LENGTH_SHORT).show()
         }
     }
 

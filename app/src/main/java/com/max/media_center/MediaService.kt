@@ -21,6 +21,7 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -80,6 +81,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 Log.e(TAG, "MediaPlayer error: $what, $extra")
                 currentState = PlaybackStateCompat.STATE_ERROR
                 updatePlaybackState()
+                showToast(getString(R.string.error_playback_failed))
                 true // 返回true表示已处理错误
             }
         }
@@ -137,6 +139,15 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * 显示Toast提示（在主线程中执行）
+     */
+    private fun showToast(message: String) {
+        handler.post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**
@@ -254,6 +265,7 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading music list", e)
+            showToast(getString(R.string.error_load_music_list_failed))
         }
     }
 
@@ -288,11 +300,15 @@ class MediaService : MediaBrowserServiceCompat() {
             handler.post(progressUpdater)
         } catch (e: Exception) {
             Log.e(TAG, "Error playing music", e)
+            showToast(getString(R.string.error_play_music_failed))
         }
     }
 
     private fun playNext() {
-        if (musicList.isEmpty()) return
+        if (musicList.isEmpty()) {
+            showToast(getString(R.string.error_playlist_empty_operation))
+            return
+        }
         when (currentPlayMode) {
             PlayMode.SEQUENTIAL -> {
                 currentIndex = (currentIndex + 1) % musicList.size
@@ -310,7 +326,10 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     private fun playPrevious() {
-        if (musicList.isEmpty()) return
+        if (musicList.isEmpty()) {
+            showToast(getString(R.string.error_playlist_empty_operation))
+            return
+        }
         when (currentPlayMode) {
             PlayMode.SEQUENTIAL -> {
                 currentIndex = (currentIndex - 1 + musicList.size) % musicList.size
@@ -433,6 +452,7 @@ class MediaService : MediaBrowserServiceCompat() {
                     playMusic(index)
                 } else {
                     Log.e(TAG, "Song with resourceId $resourceId not found in playlist")
+                    showToast(getString(R.string.error_song_not_found))
                 }
             }
         }

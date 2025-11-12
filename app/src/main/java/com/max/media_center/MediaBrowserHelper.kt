@@ -74,6 +74,7 @@ class MediaBrowserHelper(
 
         override fun onError(parentId: String) {
             Log.e(TAG, "Error loading children for $parentId")
+            listener.onError(context.getString(R.string.error_load_media_failed))
         }
     }
 
@@ -147,5 +148,6 @@ class MediaBrowserHelper(
         fun onConnectionSuspended()
         fun onPlaybackStateChanged(state: PlaybackStateCompat?)
         fun onMetadataChanged(metadata: MediaMetadataCompat?)
+        fun onError(errorMessage: String)
     }
 } 

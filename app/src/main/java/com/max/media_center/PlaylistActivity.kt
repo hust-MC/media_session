@@ -84,6 +84,10 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
         songAdapter.setCurrentPlayingId(currentMediaId)
     }
     
+    override fun onError(errorMessage: String) {
+        Toast.makeText(this, errorMessage, Toast.LENGTH_SHORT).show()
+    }
+    
     // --- Activity Lifecycle ---
 
     override fun onStart() {
