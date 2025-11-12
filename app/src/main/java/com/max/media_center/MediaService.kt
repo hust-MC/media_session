@@ -25,6 +25,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media.session.MediaButtonReceiver
+import com.max.media_center.MainActivity.Companion.INTENT_PLAY_MODE
 import java.lang.reflect.Field
 
 class MediaService : MediaBrowserServiceCompat() {
@@ -64,11 +65,11 @@ class MediaService : MediaBrowserServiceCompat() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "MediaService onCreate")
-        
+
         // 获取raw目录下的所有音频文件
         loadMusicList()
         Log.d(TAG, "MediaService loaded ${musicList.size} music items")
-        
+
         // 创建MediaPlayer并配置
         mediaPlayer = MediaPlayer().apply {
             setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
@@ -82,7 +83,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 true // 返回true表示已处理错误
             }
         }
-        
+
         // 初始化进度更新器
         progressUpdater = Runnable {
             if (currentState == PlaybackStateCompat.STATE_PLAYING) {
@@ -90,38 +91,38 @@ class MediaService : MediaBrowserServiceCompat() {
                 handler.postDelayed(progressUpdater, PROGRESS_UPDATE_INTERVAL)
             }
         }
-        
+
         // 创建MediaSession
         val sessionActivityPendingIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        
-        mediaSession = MediaSessionCompat(this, "MediaService").apply {
+
+        mediaSession = MediaSessionCompat(this, getString(R.string.media_service_tag)).apply {
             setSessionActivity(sessionActivityPendingIntent)
             setCallback(MediaSessionCallback())
             isActive = true
         }
-        
+
         // 创建通知渠道
         createNotificationChannel()
-        
+
         // 设置初始播放状态
         updatePlaybackState()
-        
+
         // 创建初始通知，确保前台服务启动
         updateNotification()
-        
+
         sessionToken = mediaSession.sessionToken
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: ${intent?.action}")
-        
+
         // 处理媒体按钮事件
         MediaButtonReceiver.handleIntent(mediaSession, intent)
-        
+
         when (intent?.action) {
             getString(R.string.action_switch_play_mode) -> {
                 Log.d(TAG, "Switching play mode from: $currentPlayMode")
@@ -129,7 +130,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 Log.d(TAG, "Switched play mode to: $currentPlayMode")
                 // 广播播放模式变化，让MainActivity更新UI
                 val broadcastIntent = Intent(getString(R.string.action_play_mode_changed))
-                broadcastIntent.putExtra("playMode", currentPlayMode.name)
+                broadcastIntent.putExtra(INTENT_PLAY_MODE, currentPlayMode.name)
                 broadcastIntent.setPackage(packageName) // 确保广播发送到本应用
                 sendBroadcast(broadcastIntent)
                 Log.d(TAG, "Broadcast sent: ${currentPlayMode.name}")
@@ -274,15 +275,15 @@ class MediaService : MediaBrowserServiceCompat() {
             val metadata = MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, musicItem.resourceId.toString())
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist))
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
                 .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, musicItem.coverArt)
                 .build()
             mediaSession.setMetadata(metadata)
-            
+
             updatePlaybackState()
             updateNotification()
-            
+
             // 启动进度更新
             handler.post(progressUpdater)
         } catch (e: Exception) {
@@ -296,9 +297,11 @@ class MediaService : MediaBrowserServiceCompat() {
             PlayMode.SEQUENTIAL -> {
                 currentIndex = (currentIndex + 1) % musicList.size
             }
+
             PlayMode.SHUFFLE -> {
                 currentIndex = (0 until musicList.size).random()
             }
+
             PlayMode.REPEAT_ONE -> {
                 // 保持当前索引不变
             }
@@ -312,9 +315,11 @@ class MediaService : MediaBrowserServiceCompat() {
             PlayMode.SEQUENTIAL -> {
                 currentIndex = (currentIndex - 1 + musicList.size) % musicList.size
             }
+
             PlayMode.SHUFFLE -> {
                 currentIndex = (0 until musicList.size).random()
             }
+
             PlayMode.REPEAT_ONE -> {
                 // 保持当前索引不变
             }
@@ -345,18 +350,22 @@ class MediaService : MediaBrowserServiceCompat() {
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
     ) {
         Log.d(TAG, "onLoadChildren called with parentId: $parentId")
-        
+
         if (parentId == MEDIA_ID_ROOT) {
             val mediaItems = musicList.map { musicItem ->
                 val description = MediaDescriptionCompat.Builder()
                     .setMediaId(musicItem.resourceId.toString())
                     .setTitle(musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
-                    .setSubtitle(musicItem.artist.takeIf { it.isNotEmpty() } ?: "未知艺术家")
+                    .setSubtitle(musicItem.artist.takeIf { it.isNotEmpty() }
+                        ?: getString(R.string.unknown_artist))
                     .setIconBitmap(musicItem.coverArt)
                     .build()
-                MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
+                MediaBrowserCompat.MediaItem(
+                    description,
+                    MediaBrowserCompat.MediaItem.FLAG_PLAYABLE
+                )
             }.toMutableList()
-            
+
             Log.d(TAG, "Returning ${mediaItems.size} items to client")
             result.sendResult(mediaItems)
         } else {
@@ -366,18 +375,19 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     private fun updatePlaybackState() {
-        val currentPosition = if (currentState == PlaybackStateCompat.STATE_PLAYING || currentState == PlaybackStateCompat.STATE_PAUSED) {
-            mediaPlayer.currentPosition.toLong()
-        } else {
-            0L
-        }
+        val currentPosition =
+            if (currentState == PlaybackStateCompat.STATE_PLAYING || currentState == PlaybackStateCompat.STATE_PAUSED) {
+                mediaPlayer.currentPosition.toLong()
+            } else {
+                0L
+            }
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_SEEK_TO
+                        PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO
             )
             .setState(currentState, currentPosition, 1.0f)
         mediaSession.setPlaybackState(stateBuilder.build())
@@ -414,7 +424,7 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onSkipToPrevious() {
             playPrevious()
         }
-        
+
         override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
             Log.d(TAG, "onPlayFromMediaId called with mediaId: $mediaId")
             mediaId?.toIntOrNull()?.let { resourceId ->

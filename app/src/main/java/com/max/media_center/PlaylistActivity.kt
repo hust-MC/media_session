@@ -51,7 +51,7 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
     // --- MediaBrowserHelper.MediaConnectionListener Callbacks ---
 
     override fun onConnected(controller: MediaControllerCompat) {
-        Log.d(TAG, "Media Service에 연결되었습니다.")
+        Log.d(TAG, "Media Service Connected")
         // 连接成功后，获取当前播放的歌曲信息并设置高亮
         val currentMetadata = controller.metadata
         val currentMediaId = currentMetadata?.getString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID)
@@ -59,7 +59,7 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
     }
     
     override fun onChildrenLoaded(items: List<MediaBrowserCompat.MediaItem>) {
-        Log.d(TAG, "${items.size}개의 곡을 불러왔습니다.")
+        Log.d(TAG, "onChildrenLoaded, item size = ${items.size}")
         if (items.isEmpty()) {
             Toast.makeText(this, getString(R.string.playlist_empty), Toast.LENGTH_SHORT).show()
         }
@@ -72,7 +72,9 @@ class PlaylistActivity : AppCompatActivity(), MediaBrowserHelper.MediaConnection
         Toast.makeText(this, getString(R.string.connection_failed), Toast.LENGTH_SHORT).show()
     }
 
-    override fun onConnectionSuspended() { Log.d(TAG, "Connection suspended") }
+    override fun onConnectionSuspended() {
+        Log.d(TAG, "Connection suspended")
+    }
     override fun onPlaybackStateChanged(state: PlaybackStateCompat?) { /* Do nothing for now */ }
     
     override fun onMetadataChanged(metadata: MediaMetadataCompat?) {

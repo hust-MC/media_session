@@ -18,6 +18,9 @@ import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.max.media_center.MediaService.PlayMode.SEQUENTIAL
+import com.max.media_center.MediaService.PlayMode.SHUFFLE
+import com.max.media_center.MediaService.PlayMode.REPEAT_ONE
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -35,13 +38,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekBar: SeekBar
     private lateinit var currentTimeText: TextView
     private lateinit var totalTimeText: TextView
-    
+
+    /** 默认播放模式 */
+    private val DEFAULT_PLAY_MODE : String by lazy {
+        SEQUENTIAL.name
+    }
+
     private val playModeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             Log.d(TAG, "Broadcast received: ${intent?.action}")
             when (intent?.action) {
                 getString(R.string.action_play_mode_changed) -> {
-                    val playModeName = intent.getStringExtra("playMode")
+                    val playModeName = intent.getStringExtra(INTENT_PLAY_MODE)
                     Log.d(TAG, "Play mode changed to: $playModeName")
                     updatePlayModeButton(playModeName)
                 }
@@ -51,6 +59,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+
+        const val INTENT_PLAY_MODE = "playMode"
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -213,7 +223,7 @@ class MainActivity : AppCompatActivity() {
             // 手动调用一次回调方法，以确保UI立即反映当前的播放状态
             mediaControllerCallback.onPlaybackStateChanged(mediaController?.playbackState)
             mediaControllerCallback.onMetadataChanged(mediaController?.metadata)
-            updatePlayModeButton("SEQUENTIAL")
+            updatePlayModeButton(DEFAULT_PLAY_MODE)
         }
 
         override fun onConnectionFailed() {
@@ -246,7 +256,7 @@ class MainActivity : AppCompatActivity() {
             metadata?.let {
                 titleText.text = it.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ?: getString(R.string.unknown_song)
                 artistText.text = it.getString(MediaMetadataCompat.METADATA_KEY_ARTIST) ?: getString(R.string.unknown_artist)
-                
+
                 // 显示专辑封面
                 val art = it.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART)
                 if (art != null) {
@@ -255,7 +265,7 @@ class MainActivity : AppCompatActivity() {
                     // 如果没有封面，显示一个默认的占位图或颜色
                     albumArt.setImageResource(android.R.drawable.ic_menu_gallery)
                 }
-                
+
                 // 更新总时长
                 val duration = it.getLong(MediaMetadataCompat.METADATA_KEY_DURATION)
                 seekBar.max = duration.toInt()
@@ -279,9 +289,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlayModeButton(playModeName: String?) {
         val iconRes = when (playModeName) {
-            "SEQUENTIAL" -> R.drawable.ic_repeat_all
-            "SHUFFLE" -> R.drawable.ic_shuffle
-            "REPEAT_ONE" -> R.drawable.ic_repeat_one
+            SEQUENTIAL.name -> R.drawable.ic_repeat_all
+            SHUFFLE.name -> R.drawable.ic_shuffle
+            REPEAT_ONE.name -> R.drawable.ic_repeat_one
             else -> R.drawable.ic_repeat_all
         }
         playModeButton.setImageResource(iconRes)
