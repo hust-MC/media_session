@@ -36,7 +36,8 @@
         <service
             android:name="com.max.media_center.MediaService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            android:permission="android.permission.MEDIA_CONTENT_CONTROL">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>

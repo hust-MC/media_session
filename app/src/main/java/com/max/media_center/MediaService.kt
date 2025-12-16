@@ -163,7 +163,8 @@ class MediaService : MediaBrowserServiceCompat() {
             ).apply {
                 description = getString(R.string.media_playback_channel_description)
             }
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -174,56 +175,84 @@ class MediaService : MediaBrowserServiceCompat() {
      */
     private fun updateNotification() {
         val musicItem = musicList.getOrNull(currentIndex)
-        val title = musicItem?.title?.takeIf { it.isNotEmpty() } ?: musicItem?.name ?: getString(R.string.unknown_song)
-        val artist = musicItem?.artist?.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist)
-        
+        val title = musicItem?.title?.takeIf { it.isNotEmpty() } ?: musicItem?.name
+        ?: getString(R.string.unknown_song)
+        val artist =
+            musicItem?.artist?.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist)
+
         // 创建播放/暂停动作
         val playPauseAction = if (currentState == PlaybackStateCompat.STATE_PLAYING) {
             NotificationCompat.Action.Builder(
                 android.R.drawable.ic_media_pause,
                 getString(R.string.pause),
-                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
+                MediaButtonReceiver.buildMediaButtonPendingIntent(
+                    this,
+                    PlaybackStateCompat.ACTION_PAUSE
+                )
             ).build()
         } else {
             NotificationCompat.Action.Builder(
                 android.R.drawable.ic_media_play,
-                getString(R.string.play), 
-                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
+                getString(R.string.play),
+                MediaButtonReceiver.buildMediaButtonPendingIntent(
+                    this,
+                    PlaybackStateCompat.ACTION_PLAY
+                )
             ).build()
         }
-        
+
         // 创建上一首动作
         val prevAction = NotificationCompat.Action.Builder(
             android.R.drawable.ic_media_previous,
             getString(R.string.previous),
-            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+            )
         ).build()
-        
+
         // 创建下一首动作
         val nextAction = NotificationCompat.Action.Builder(
             android.R.drawable.ic_media_next,
             getString(R.string.next),
-            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+            MediaButtonReceiver.buildMediaButtonPendingIntent(
+                this,
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+            )
         ).build()
-        
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSubText(if (currentState == PlaybackStateCompat.STATE_PLAYING) getString(R.string.now_playing) else getString(R.string.paused))
+            .setSubText(
+                if (currentState == PlaybackStateCompat.STATE_PLAYING) getString(R.string.now_playing) else getString(
+                    R.string.paused
+                )
+            )
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(mediaSession.controller.sessionActivity)
-            .setDeleteIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP))
+            .setDeleteIntent(
+                MediaButtonReceiver.buildMediaButtonPendingIntent(
+                    this,
+                    PlaybackStateCompat.ACTION_STOP
+                )
+            )
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .addAction(prevAction)
-            .addAction(playPauseAction) 
+            .addAction(playPauseAction)
             .addAction(nextAction)
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
                     .setShowActionsInCompactView(0, 1, 2) // 显示所有3个按钮
                     .setShowCancelButton(true)
-                    .setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP))
+                    .setCancelButtonIntent(
+                        MediaButtonReceiver.buildMediaButtonPendingIntent(
+                            this,
+                            PlaybackStateCompat.ACTION_STOP
+                        )
+                    )
             )
             .build()
 
@@ -237,30 +266,33 @@ class MediaService : MediaBrowserServiceCompat() {
                 val resourceId = field.getInt(null)
                 val resourceName = field.name
                 val musicItem = MusicItem(resourceName, resourceId)
-                
+
                 // 获取音频文件的元数据
                 try {
                     val retriever = MediaMetadataRetriever()
                     val uri = Uri.parse("android.resource://${packageName}/raw/${resourceName}")
                     retriever.setDataSource(applicationContext, uri)
-                    
-                    musicItem.title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
-                    musicItem.artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-                    
+
+                    musicItem.title =
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
+                    musicItem.artist =
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
+
                     // 提取专辑封面并压缩
                     val artBytes = retriever.embeddedPicture
                     if (artBytes != null) {
                         val options = BitmapFactory.Options().apply {
                             inSampleSize = IMAGE_COMPRESSION_RATIO // 压缩图片，避免内存溢出
                         }
-                        musicItem.coverArt = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, options)
+                        musicItem.coverArt =
+                            BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, options)
                     }
-                    
+
                     retriever.release()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error getting metadata for $resourceName", e)
                 }
-                
+
                 musicList.add(musicItem)
             }
         } catch (e: Exception) {
@@ -271,23 +303,34 @@ class MediaService : MediaBrowserServiceCompat() {
 
     private fun playMusic(index: Int) {
         if (index < 0 || index >= musicList.size) return
-        
+
         currentIndex = index
         val musicItem = musicList[index]
-        
+
         try {
             mediaPlayer.reset()
-            mediaPlayer.setDataSource(applicationContext, Uri.parse("android.resource://${packageName}/raw/${musicItem.name}"))
+            mediaPlayer.setDataSource(
+                applicationContext,
+                Uri.parse("android.resource://${packageName}/raw/${musicItem.name}")
+            )
             mediaPlayer.prepare()
             val duration = mediaPlayer.duration.toLong()
             mediaPlayer.start()
             currentState = PlaybackStateCompat.STATE_PLAYING
-            
+
             // 更新元数据
             val metadata = MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, musicItem.resourceId.toString())
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, musicItem.artist.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist))
+                .putString(
+                    MediaMetadataCompat.METADATA_KEY_MEDIA_ID,
+                    musicItem.resourceId.toString()
+                )
+                .putString(
+                    MediaMetadataCompat.METADATA_KEY_TITLE,
+                    musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
+                .putString(
+                    MediaMetadataCompat.METADATA_KEY_ARTIST,
+                    musicItem.artist.takeIf { it.isNotEmpty() }
+                        ?: getString(R.string.unknown_artist))
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
                 .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, musicItem.coverArt)
                 .build()
@@ -417,13 +460,24 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onPlay() {
             if (currentState != PlaybackStateCompat.STATE_PLAYING) {
                 if (musicList.isEmpty()) {
-                    playMusic(0)
-                } else {
+                    // 列表为空，无法播放
+                    Log.w(TAG, "Cannot play: music list is empty")
+                    Toast.makeText(this@MediaService, "播放列表为空", Toast.LENGTH_SHORT).show()
+                    return
+                }
+
+                // 根据当前状态决定是开始播放还是恢复播放
+                if (currentState == PlaybackStateCompat.STATE_PAUSED) {
+                    // 暂停后恢复播放
                     mediaPlayer.start()
                     currentState = PlaybackStateCompat.STATE_PLAYING
                     updatePlaybackState()
                     handler.post(progressUpdater)
+                } else {
+                    // 首次播放或停止后重新播放
+                    playMusic(currentIndex)
                 }
+
             }
         }
 
