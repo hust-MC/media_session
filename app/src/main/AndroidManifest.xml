@@ -19,9 +19,10 @@
 
         <activity
             android:name="com.max.media_center.MainActivity"
+            android:configChanges="orientation|screenSize"
             android:exported="true"
             android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize">
+            android:theme="@style/Theme.AppCompat.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -30,8 +31,9 @@
 
         <activity
             android:name=".PlaylistActivity"
+            android:configChanges="orientation|screenSize"
             android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize" />
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
 
         <service
             android:name="com.max.media_center.MediaService"
@@ -43,7 +45,7 @@
             </intent-filter>
         </service>
 
-        <receiver 
+        <receiver
             android:name="androidx.media.session.MediaButtonReceiver"
             android:exported="true">
             <intent-filter>
