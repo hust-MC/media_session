@@ -35,11 +35,13 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 
+        <!-- MediaBrowserService：提供给车机桌面等客户端连接控制播放。
+             这里不再强制要求 MEDIA_CONTENT_CONTROL 系统权限，
+             方便普通第三方 App（如本课程的桌面控件）也能连接。 -->
         <service
             android:name="com.max.media_center.MediaService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
-            android:permission="android.permission.MEDIA_CONTENT_CONTROL">
+            android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
