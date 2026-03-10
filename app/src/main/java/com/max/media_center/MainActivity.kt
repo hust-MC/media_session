@@ -24,27 +24,46 @@ import com.max.media_center.MediaService.PlayMode.SHUFFLE
 import com.max.media_center.MediaService.PlayMode.REPEAT_ONE
 import java.util.concurrent.TimeUnit
 
+/**
+ * 主界面 Activity，负责车载音乐播放器的主屏展示与播放控制。
+ * 通过 MediaBrowser 连接 MediaService，使用 MediaController 控制播放、切换歌曲、调节进度，
+ * 并监听播放模式变更广播以更新播放模式按钮图标。
+ */
 class MainActivity : AppCompatActivity() {
+    /** 用于连接 MediaBrowserService 的浏览器实例 */
     private lateinit var mediaBrowser: MediaBrowserCompat
+    /** 媒体控制器，UI 与 MediaSession 之间的桥梁，用于发送播放指令并接收状态回调 */
     private var mediaController: MediaControllerCompat? = null
-    
+
+    /** 播放/暂停按钮 */
     private lateinit var playPauseButton: ImageButton
+    /** 上一首按钮 */
     private lateinit var prevButton: ImageButton
+    /** 下一首按钮 */
     private lateinit var nextButton: ImageButton
+    /** 播放模式切换按钮（顺序/随机/单曲循环） */
     private lateinit var playModeButton: ImageButton
+    /** 播放列表入口按钮 */
     private lateinit var playlistButton: ImageButton
+    /** 歌曲标题文本 */
     private lateinit var titleText: TextView
+    /** 艺术家文本 */
     private lateinit var artistText: TextView
+    /** 专辑封面图片 */
     private lateinit var albumArt: ImageView
+    /** 播放进度条 */
     private lateinit var seekBar: SeekBar
+    /** 当前播放时间显示 */
     private lateinit var currentTimeText: TextView
+    /** 总时长显示 */
     private lateinit var totalTimeText: TextView
 
-    /** 默认播放模式 */
-    private val DEFAULT_PLAY_MODE : String by lazy {
+    /** 默认播放模式（顺序播放），用于连接成功后初始化播放模式按钮图标 */
+    private val DEFAULT_PLAY_MODE: String by lazy {
         SEQUENTIAL.name
     }
 
+    /** 接收播放模式变更广播，用于在服务端切换模式后更新主界面播放模式按钮 */
     private val playModeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             Log.d(TAG, "Broadcast received: ${intent?.action}")
@@ -60,10 +79,14 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-
+        /** 播放模式广播 Intent 的 extra 键名，值为当前 PlayMode 的 name */
         const val INTENT_PLAY_MODE = "playMode"
     }
 
+    /**
+     * Activity 创建时调用。启动前台服务、绑定视图、注册广播、初始化 MediaBrowser 并设置各按钮点击与进度条拖动监听。
+     * @param savedInstanceState 若从重建恢复则非 null
+     */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -159,10 +182,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Activity生命周期方法：当Activity变为可见时调用。
-     * 我们的策略是：
-     * 1. 如果尚未连接到MediaBrowserService，则发起连接。
-     * 2. 如果已经连接（例如从播放列表返回），则重新注册回调并立即同步UI状态。
+     * Activity 变为可见时调用。
+     * 若尚未连接 MediaBrowserService 则发起连接；若已连接（如从播放列表返回）则重新注册 MediaController 回调并立即同步一次播放状态与元数据到 UI。
      */
     override fun onStart() {
         super.onStart()
@@ -177,9 +198,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Activity生命周期方法：当Activity不再可见时调用。
-     * 我们在这里注销回调，以防止在Activity不可见时更新UI，从而避免内存泄漏和不必要的资源消耗。
-     * 我们不在此处断开连接，以保持后台播放并能快速恢复。
+     * Activity 不可见时调用。
+     * 仅注销 MediaController 回调，不断开 MediaBrowser 连接，以便保持后台播放并在返回时快速恢复 UI。
      */
     override fun onStop() {
         super.onStop()
@@ -188,8 +208,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     /**
-     * Activity生命周期方法：当Activity被销毁时调用。
-     * 这是断开与MediaBrowserService连接的正确时机。
+     * Activity 销毁时调用。断开 MediaBrowser 连接并注销播放模式广播接收器。
      */
     override fun onDestroy() {
         super.onDestroy()
@@ -204,13 +223,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * MediaBrowser连接状态的回调接口。
-     */
+    /** MediaBrowser 连接状态回调：处理连接成功、失败、挂起 */
     private val connectionCallback = object : MediaBrowserCompat.ConnectionCallback() {
         /**
-         * 当成功连接到MediaBrowserService时调用。
-         * 这是初始化MediaController并首次同步UI状态的关键点。
+         * 成功连接到 MediaBrowserService 时调用。创建并绑定 MediaController，注册状态回调并同步当前播放状态与元数据，更新播放模式按钮。
          */
         override fun onConnected() {
             if (mediaController == null) {
@@ -227,11 +243,13 @@ class MainActivity : AppCompatActivity() {
             updatePlayModeButton(DEFAULT_PLAY_MODE)
         }
 
+        /** 连接失败时调用，清空 controller 并提示用户 */
         override fun onConnectionFailed() {
             mediaController = null
             Toast.makeText(this@MainActivity, getString(R.string.connection_failed), Toast.LENGTH_SHORT).show()
         }
 
+        /** 连接被挂起时调用，注销回调并提示重新连接 */
         override fun onConnectionSuspended() {
             mediaController?.unregisterCallback(mediaControllerCallback)
             mediaController = null
@@ -239,13 +257,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * MediaController的回调接口，用于接收来自MediaSession的状态更新。
-     * 无论Activity是否在前台，只要回调被注册，这些方法就会在播放状态或元数据变化时被调用。
-     */
+    /** MediaController 回调：在播放状态或元数据变化时更新主界面 UI */
     private val mediaControllerCallback = object : MediaControllerCompat.Callback() {
         /**
-         * 当播放状态（播放、暂停、缓冲等）改变时调用。
+         * 播放状态变化时调用。更新播放/暂停按钮图标和进度条、当前时间显示。
+         * @param state 当前播放状态，可为 null
          */
         override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
             updatePlayPauseButton(state?.state ?: PlaybackStateCompat.STATE_NONE)
@@ -253,7 +269,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**
-         * 当正在播放的媒体项目元数据（歌曲标题、艺术家、时长等）改变时调用。
+         * 当前媒体元数据变化时调用。更新标题、艺术家、专辑封面、总时长及进度条最大值。
+         * @param metadata 当前媒体元数据，可为 null
          */
         override fun onMetadataChanged(metadata: MediaMetadataCompat?) {
             metadata?.let {
@@ -277,6 +294,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 根据播放状态更新播放/暂停按钮图标。
+     * @param state 播放状态，如 STATE_PLAYING、STATE_PAUSED 等
+     */
     private fun updatePlayPauseButton(state: Int) {
         playPauseButton.setImageResource(when (state) {
             PlaybackStateCompat.STATE_PLAYING -> R.drawable.ic_pause
@@ -284,12 +305,20 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    /**
+     * 根据当前播放状态更新进度条和当前时间文本。
+     * @param state 当前播放状态，从中取 position
+     */
     private fun updateProgress(state: PlaybackStateCompat?) {
         val currentPosition = state?.position ?: 0
         seekBar.progress = currentPosition.toInt()
         currentTimeText.text = formatTime(currentPosition)
     }
 
+    /**
+     * 根据播放模式名称更新播放模式按钮图标。
+     * @param playModeName 播放模式名称，如 SEQUENTIAL、SHUFFLE、REPEAT_ONE，为 null 时按顺序播放图标显示
+     */
     private fun updatePlayModeButton(playModeName: String?) {
         val iconRes = when (playModeName) {
             SEQUENTIAL.name -> R.drawable.ic_repeat_all
@@ -301,9 +330,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 格式化时间显示
+     * 将毫秒数格式化为 "分:秒" 字符串（如 03:45）。
      * @param millis 毫秒数
-     * @return 格式化的时间字符串 (MM:SS)
+     * @return 格式化的时间字符串，格式由 R.string.time_format 定义（如 %02d:%02d）
      */
     private fun formatTime(millis: Long): String {
         return String.format(getString(R.string.time_format),

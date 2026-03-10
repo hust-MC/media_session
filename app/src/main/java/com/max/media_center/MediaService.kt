@@ -29,17 +29,34 @@ import androidx.media.session.MediaButtonReceiver
 import com.max.media_center.MainActivity.Companion.INTENT_PLAY_MODE
 import java.lang.reflect.Field
 
+/**
+ * 媒体播放后台服务，继承 MediaBrowserServiceCompat。
+ * 负责：从 raw 加载音乐列表、MediaPlayer 播放控制、MediaSession 与通知栏展示、
+ * 播放模式（顺序/随机/单曲循环）切换并通过广播通知主界面，以及向 MediaBrowser 客户端提供媒体列表与播放能力。
+ */
 class MediaService : MediaBrowserServiceCompat() {
+    /** 媒体会话，用于与 MediaController 及系统媒体控件交互 */
     private lateinit var mediaSession: MediaSessionCompat
+    /** 实际执行音频播放的 MediaPlayer */
     private lateinit var mediaPlayer: MediaPlayer
+    /** 当前播放状态：无、播放中、暂停、停止、错误等 */
     private var currentState = PlaybackStateCompat.STATE_NONE
+    /** 当前播放项在 musicList 中的索引 */
     private var currentIndex = 0
+    /** 音乐列表，从 res/raw 扫描并填充元数据 */
     private val musicList = mutableListOf<MusicItem>()
+    /** 唤醒锁（若使用），防止播放时 CPU 休眠 */
     private var wakeLock: PowerManager.WakeLock? = null
+    /** 当前播放模式：顺序、随机、单曲循环 */
     private var currentPlayMode = PlayMode.SEQUENTIAL
+    /** 主线程 Handler，用于延迟任务与 Toast */
     private val handler = Handler(Looper.getMainLooper())
+    /** 周期性更新播放进度的 Runnable */
     private lateinit var progressUpdater: Runnable
 
+    /**
+     * 单曲数据模型。name 为 raw 资源名，resourceId 为 R.raw.xxx 的 id，title/artist/coverArt 从文件元数据解析。
+     */
     data class MusicItem(
         val name: String,
         val resourceId: Int,
@@ -48,6 +65,7 @@ class MediaService : MediaBrowserServiceCompat() {
         var coverArt: Bitmap? = null
     )
 
+    /** 播放模式枚举：顺序播放、随机播放、单曲循环 */
     enum class PlayMode {
         SEQUENTIAL,  // 顺序播放
         SHUFFLE,     // 随机播放
@@ -56,18 +74,24 @@ class MediaService : MediaBrowserServiceCompat() {
 
     companion object {
         private const val TAG = "MediaService"
+        /** MediaBrowser 根节点 ID，客户端通过此 ID 订阅子列表 */
         private const val MEDIA_ID_ROOT = "__ROOT__"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "media_playback_channel"
-        private const val PROGRESS_UPDATE_INTERVAL = 1000L // 进度更新间隔（毫秒）
-        private const val IMAGE_COMPRESSION_RATIO = 2 // 图片压缩比例
+        /** 进度更新间隔（毫秒） */
+        private const val PROGRESS_UPDATE_INTERVAL = 1000L
+        /** 专辑封面解码时的压缩比例，避免大图 OOM */
+        private const val IMAGE_COMPRESSION_RATIO = 2
     }
 
+    /**
+     * 服务创建时调用。加载音乐列表、初始化 MediaPlayer 与进度更新器、创建 MediaSession 与通知渠道，并暴露 sessionToken。
+     */
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "MediaService onCreate")
 
-        // 获取raw目录下的所有音频文件
+        // 从 res/raw 扫描所有音频并解析元数据
         loadMusicList()
         Log.d(TAG, "MediaService loaded ${musicList.size} music items")
 
@@ -119,21 +143,28 @@ class MediaService : MediaBrowserServiceCompat() {
         sessionToken = mediaSession.sessionToken
     }
 
+    /**
+     * 每次通过 startService 启动或媒体按钮触发时调用。先交给 MediaButtonReceiver 处理播放/暂停等，再处理切换播放模式的 action 并发送广播。
+     * @param intent 启动意图，action 可能为切换播放模式等
+     * @param flags 启动标志
+     * @param startId 本次启动 ID
+     * @return 由父类决定的返回值
+     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: ${intent?.action}")
-        
-        // 处理媒体按钮事件
+
+        // 耳机/通知栏等媒体按钮事件统一由此处理
         MediaButtonReceiver.handleIntent(mediaSession, intent)
-        
+
         when (intent?.action) {
             getString(R.string.action_switch_play_mode) -> {
                 Log.d(TAG, "Switching play mode from: $currentPlayMode")
                 switchPlayMode()
                 Log.d(TAG, "Switched play mode to: $currentPlayMode")
-                // 广播播放模式变化，让MainActivity更新UI
+                // 广播播放模式变化，供 MainActivity 更新播放模式按钮
                 val broadcastIntent = Intent(getString(R.string.action_play_mode_changed))
                 broadcastIntent.putExtra(INTENT_PLAY_MODE, currentPlayMode.name)
-                broadcastIntent.setPackage(packageName) // 确保广播发送到本应用
+                broadcastIntent.setPackage(packageName)
                 sendBroadcast(broadcastIntent)
                 Log.d(TAG, "Broadcast sent: ${currentPlayMode.name}")
             }
@@ -142,7 +173,8 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * 显示Toast提示（在主线程中执行）
+     * 在主线程中显示 Toast。可在子线程中安全调用。
+     * @param message 要显示的提示文案
      */
     private fun showToast(message: String) {
         handler.post {
@@ -151,8 +183,7 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * 创建通知渠道
-     * 在Android 8.0及以上版本中，需要创建通知渠道才能显示通知
+     * 创建媒体播放通知渠道。Android 8.0 及以上必须创建渠道后通知才会显示。
      */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -170,8 +201,7 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * 更新通知栏显示
-     * 显示当前播放的歌曲信息和播放控制按钮
+     * 更新前台通知：标题/艺术家、播放状态副标题、上一首/播放暂停/下一首按钮，并保持前台服务。
      */
     private fun updateNotification() {
         val musicItem = musicList.getOrNull(currentIndex)
@@ -259,6 +289,9 @@ class MediaService : MediaBrowserServiceCompat() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
+    /**
+     * 通过反射遍历 R.raw 下所有资源，构建 MusicItem 列表并解析每首的标题、艺术家、封面（若有），失败时 Toast 提示。
+     */
     private fun loadMusicList() {
         try {
             val fields: Array<Field> = R.raw::class.java.fields
@@ -301,12 +334,16 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    /**
+     * 播放 musicList 中指定索引的歌曲。重置 MediaPlayer、设置数据源、准备并开始播放，更新 MediaSession 元数据与通知，并启动进度更新。
+     * @param index 歌曲在 musicList 中的下标，越界则直接返回
+     */
     private fun playMusic(index: Int) {
         if (index < 0 || index >= musicList.size) return
-        
+
         currentIndex = index
         val musicItem = musicList[index]
-        
+
         try {
             mediaPlayer.reset()
             mediaPlayer.setDataSource(
@@ -347,6 +384,9 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    /**
+     * 播放下一首。顺序模式为列表下一项（循环）；随机模式随机下标；单曲循环不改变索引。列表为空时 Toast 提示。
+     */
     private fun playNext() {
         if (musicList.isEmpty()) {
             showToast(getString(R.string.error_playlist_empty_operation))
@@ -356,18 +396,19 @@ class MediaService : MediaBrowserServiceCompat() {
             PlayMode.SEQUENTIAL -> {
                 currentIndex = (currentIndex + 1) % musicList.size
             }
-
             PlayMode.SHUFFLE -> {
                 currentIndex = (0 until musicList.size).random()
             }
-
             PlayMode.REPEAT_ONE -> {
-                // 保持当前索引不变
+                // 单曲循环：索引不变，相当于重播当前首
             }
         }
         playMusic(currentIndex)
     }
 
+    /**
+     * 播放上一首。顺序模式为列表上一项（循环）；随机模式随机下标；单曲循环不改变索引。列表为空时 Toast 提示。
+     */
     private fun playPrevious() {
         if (musicList.isEmpty()) {
             showToast(getString(R.string.error_playlist_empty_operation))
@@ -383,12 +424,15 @@ class MediaService : MediaBrowserServiceCompat() {
             }
 
             PlayMode.REPEAT_ONE -> {
-                // 保持当前索引不变
+                // 单曲循环：索引不变
             }
         }
         playMusic(currentIndex)
     }
 
+    /**
+     * 切换播放模式：顺序 -> 随机 -> 单曲循环 -> 顺序。仅修改 currentPlayMode，不自动播放；主界面通过广播获取新模式并更新图标。
+     */
     fun switchPlayMode() {
         currentPlayMode = when (currentPlayMode) {
             PlayMode.SEQUENTIAL -> PlayMode.SHUFFLE
@@ -397,8 +441,19 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    /**
+     * 获取当前播放模式。
+     * @return 当前 PlayMode 枚举值
+     */
     fun getCurrentPlayMode(): PlayMode = currentPlayMode
 
+    /**
+     * MediaBrowser 请求根节点时调用。允许连接则返回以 MEDIA_ID_ROOT 为 id 的 BrowserRoot。
+     * @param clientPackageName 客户端包名
+     * @param clientUid 客户端 UID
+     * @param rootHints 可选的根节点参数
+     * @return 根节点，null 表示拒绝连接
+     */
     override fun onGetRoot(
         clientPackageName: String,
         clientUid: Int,
@@ -407,6 +462,11 @@ class MediaService : MediaBrowserServiceCompat() {
         return BrowserRoot(MEDIA_ID_ROOT, null)
     }
 
+    /**
+     * 客户端订阅某父节点子列表时调用。仅当 parentId 为 MEDIA_ID_ROOT 时返回 musicList 对应的 MediaItem 列表，否则返回 null。
+     * @param parentId 父节点 ID
+     * @param result 用于发送结果的回调
+     */
     override fun onLoadChildren(
         parentId: String,
         result: Result<MutableList<MediaBrowserCompat.MediaItem>>
@@ -436,13 +496,16 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    /**
+     * 根据 currentState 和 mediaPlayer.currentPosition 构建 PlaybackStateCompat 并设置到 MediaSession，同时刷新通知栏。
+     */
     private fun updatePlaybackState() {
         val currentPosition =
             if (currentState == PlaybackStateCompat.STATE_PLAYING || currentState == PlaybackStateCompat.STATE_PAUSED) {
-            mediaPlayer.currentPosition.toLong()
-        } else {
-            0L
-        }
+                mediaPlayer.currentPosition.toLong()
+            } else {
+                0L
+            }
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
@@ -456,11 +519,16 @@ class MediaService : MediaBrowserServiceCompat() {
         updateNotification()
     }
 
+    /**
+     * MediaSession 回调：处理播放、暂停、上一首、下一首、按 mediaId 播放、seek、停止等。与 MediaController/通知栏/耳机按键一一对应。
+     */
     private inner class MediaSessionCallback : MediaSessionCompat.Callback() {
+        /**
+         * 用户请求播放时调用。若列表为空则 Toast 并返回；若当前为暂停则恢复播放；否则从 currentIndex 开始播放。
+         */
         override fun onPlay() {
             if (currentState != PlaybackStateCompat.STATE_PLAYING) {
                 if (musicList.isEmpty()) {
-                    // 列表为空，无法播放
                     Log.w(TAG, "Cannot play: music list is empty")
                     Toast.makeText(this@MediaService, getString(R.string.playlist_empty), Toast.LENGTH_SHORT).show()
                     return
@@ -481,6 +549,7 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
 
+        /** 用户请求暂停时，暂停 MediaPlayer 并停止进度更新 */
         override fun onPause() {
             if (currentState == PlaybackStateCompat.STATE_PLAYING) {
                 mediaPlayer.pause()
@@ -490,14 +559,21 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
 
+        /** 用户请求下一首时，调用 playNext() */
         override fun onSkipToNext() {
             playNext()
         }
 
+        /** 用户请求上一首时，调用 playPrevious() */
         override fun onSkipToPrevious() {
             playPrevious()
         }
-        
+
+        /**
+         * 按 mediaId 播放（如从播放列表点击某首）。mediaId 对应 MusicItem.resourceId，找到索引后调用 playMusic。
+         * @param mediaId 媒体 ID，可为 null
+         * @param extras 可选附加参数
+         */
         override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
             Log.d(TAG, "onPlayFromMediaId called with mediaId: $mediaId")
             mediaId?.toIntOrNull()?.let { resourceId ->
@@ -511,13 +587,14 @@ class MediaService : MediaBrowserServiceCompat() {
             }
         }
 
+        /** 用户拖动进度到 pos 时调用，将 MediaPlayer seek 到指定位置并更新状态 */
         override fun onSeekTo(pos: Long) {
             mediaPlayer.seekTo(pos.toInt())
             updatePlaybackState()
         }
 
+        /** 用户点击通知栏停止时调用：停止播放、取消进度更新、更新状态、移除前台通知并 stopSelf */
         override fun onStop() {
-            // 1. 停止播放
             if (mediaPlayer.isPlaying) {
                 mediaPlayer.stop()
             }
@@ -540,11 +617,13 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    /** 任务被移除（用户划掉应用）时停止服务 */
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         stopSelf()
     }
 
+    /** 服务销毁时移除进度更新、释放 MediaSession 与 MediaPlayer、释放 WakeLock */
     override fun onDestroy() {
         handler.removeCallbacks(progressUpdater)
         mediaSession.release()
