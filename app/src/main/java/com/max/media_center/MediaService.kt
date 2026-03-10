@@ -462,7 +462,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 if (musicList.isEmpty()) {
                     // 列表为空，无法播放
                     Log.w(TAG, "Cannot play: music list is empty")
-                    Toast.makeText(this@MediaService, "播放列表为空", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MediaService, getString(R.string.playlist_empty), Toast.LENGTH_SHORT).show()
                     return
                 }
 

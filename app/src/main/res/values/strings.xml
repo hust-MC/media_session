@@ -1,59 +1,59 @@
 <resources>
-    <string name="app_name">车载音乐播放器</string>
-    
-    <!-- 主界面文本 -->
-    <string name="unknown_song">未知歌曲</string>
-    <string name="unknown_artist">未知艺术家</string>
-    <string name="no_title">无标题</string>
-    <string name="car_media_player">车载音乐播放器</string>
-    <string name="please_select_song">请选择歌曲</string>
-    
-    <!-- 播放控制 -->
-    <string name="play">播放</string>
-    <string name="pause">暂停</string>
-    <string name="previous">上一首</string>
-    <string name="next">下一首</string>
-    <string name="playlist">播放列表</string>
-    <string name="play_mode">播放模式</string>
-    
-    <!-- 播放模式 -->
-    <string name="sequential_mode">顺序播放</string>
-    <string name="shuffle_mode">随机播放</string>
-    <string name="repeat_one_mode">单曲循环</string>
-    
-    <!-- 播放状态 -->
-    <string name="now_playing">正在播放</string>
-    <string name="paused">已暂停</string>
-    <string name="stopped">已停止</string>
-    
-    <!-- 通知 -->
-    <string name="media_playback_channel">媒体播放</string>
-    <string name="media_playback_channel_description">媒体播放控制</string>
-    
-    <!-- 播放列表 -->
-    <string name="playlist_title">播放列表</string>
-    <string name="playlist_empty">播放列表为空</string>
-    <string name="now_playing_format">正在播放: %s</string>
-    <string name="connection_failed">服务连接失败</string>
-    
-    <!-- 时间格式 -->
+    <string name="app_name">Car Media Player</string>
+
+    <!-- Main UI -->
+    <string name="unknown_song">Unknown Song</string>
+    <string name="unknown_artist">Unknown Artist</string>
+    <string name="no_title">No Title</string>
+    <string name="car_media_player">Car Media Player</string>
+    <string name="please_select_song">Please select a song</string>
+
+    <!-- Playback controls -->
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="playlist">Playlist</string>
+    <string name="play_mode">Play mode</string>
+
+    <!-- Play modes -->
+    <string name="sequential_mode">Sequential</string>
+    <string name="shuffle_mode">Shuffle</string>
+    <string name="repeat_one_mode">Repeat one</string>
+
+    <!-- Playback state -->
+    <string name="now_playing">Now playing</string>
+    <string name="paused">Paused</string>
+    <string name="stopped">Stopped</string>
+
+    <!-- Notification -->
+    <string name="media_playback_channel">Media playback</string>
+    <string name="media_playback_channel_description">Media playback controls</string>
+
+    <!-- Playlist -->
+    <string name="playlist_title">Playlist</string>
+    <string name="playlist_empty">Playlist is empty</string>
+    <string name="now_playing_format">Now playing: %s</string>
+    <string name="connection_failed">Failed to connect to service</string>
+
+    <!-- Time format -->
     <string name="time_format">%02d:%02d</string>
-    
-    <!-- 广播动作 -->
+
+    <!-- Broadcast actions (keep as stable IDs, do not translate) -->
     <string name="action_play_mode_changed">PLAY_MODE_CHANGED</string>
     <string name="action_switch_play_mode">SWITCH_PLAY_MODE</string>
     <string name="action_error_occurred">ERROR_OCCURRED</string>
-    
-    <!-- 错误提示 -->
-    <string name="error_playback_failed">播放失败，请重试</string>
-    <string name="error_load_music_list_failed">无法加载音乐列表</string>
-    <string name="error_play_music_failed">无法播放该歌曲</string>
-    <string name="error_song_not_found">歌曲不存在</string>
-    <string name="error_playlist_empty_operation">播放列表为空</string>
-    <string name="error_connection_suspended">服务连接已中断，正在重新连接...</string>
-    <string name="error_load_media_failed">加载媒体列表失败</string>
-    
-    <!-- 常量 -->
+
+    <!-- Error messages -->
+    <string name="error_playback_failed">Playback failed, please retry</string>
+    <string name="error_load_music_list_failed">Unable to load music list</string>
+    <string name="error_play_music_failed">Unable to play this song</string>
+    <string name="error_song_not_found">Song not found</string>
+    <string name="error_playlist_empty_operation">Playlist is empty</string>
+    <string name="error_connection_suspended">Connection suspended, reconnecting…</string>
+    <string name="error_load_media_failed">Failed to load media list</string>
+
+    <!-- Constants (internal IDs, do not translate) -->
     <string name="media_id_root">__ROOT__</string>
     <string name="notification_channel_id">media_playback_channel</string>
     <string name="media_service_tag">MediaService</string>
