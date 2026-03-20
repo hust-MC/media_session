@@ -52,6 +52,7 @@
     <string name="error_playlist_empty_operation">Playlist is empty</string>
     <string name="error_connection_suspended">Connection suspended, reconnecting…</string>
     <string name="error_load_media_failed">Failed to load media list</string>
+    <string name="error_audio_focus_failed">Cannot acquire audio focus</string>
 
     <!-- Constants (internal IDs, do not translate) -->
     <string name="media_id_root">__ROOT__</string>

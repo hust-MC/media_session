@@ -52,6 +52,7 @@
     <string name="error_playlist_empty_operation">播放列表为空</string>
     <string name="error_connection_suspended">服务连接已中断，正在重新连接…</string>
     <string name="error_load_media_failed">加载媒体列表失败</string>
+    <string name="error_audio_focus_failed">无法获取音频焦点</string>
 
     <!-- 常量（不翻译） -->
     <string name="media_id_root">__ROOT__</string>

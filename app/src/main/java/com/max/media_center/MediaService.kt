@@ -5,8 +5,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
@@ -54,6 +58,18 @@ class MediaService : MediaBrowserServiceCompat() {
     /** 周期性更新播放进度的 Runnable */
     private lateinit var progressUpdater: Runnable
 
+    // ---- AudioFocus 相关 ----
+    /** 系统音频管理器，用于请求和释放音频焦点 */
+    private lateinit var audioManager: AudioManager
+    /** Android 8.0+ 的音频焦点请求对象 */
+    private lateinit var audioFocusRequest: AudioFocusRequest
+    /** 临时失去焦点时记录是否需要在重获焦点后恢复播放 */
+    private var playOnAudioFocus = false
+
+    // ---- 持久化相关 ----
+    /** 用于保存/恢复播放状态的 SharedPreferences */
+    private lateinit var prefs: SharedPreferences
+
     /**
      * 单曲数据模型。name 为 raw 资源名，resourceId 为 R.raw.xxx 的 id，title/artist/coverArt 从文件元数据解析。
      */
@@ -82,6 +98,15 @@ class MediaService : MediaBrowserServiceCompat() {
         private const val PROGRESS_UPDATE_INTERVAL = 1000L
         /** 专辑封面解码时的压缩比例，避免大图 OOM */
         private const val IMAGE_COMPRESSION_RATIO = 2
+        /** Duck 时降低到的音量比例 */
+        private const val DUCK_VOLUME = 0.2f
+        /** 正常音量 */
+        private const val FULL_VOLUME = 1.0f
+        // 持久化 Key
+        private const val PREFS_NAME = "media_player_prefs"
+        private const val KEY_CURRENT_INDEX = "current_index"
+        private const val KEY_CURRENT_POSITION = "current_position"
+        private const val KEY_PLAY_MODE = "play_mode"
     }
 
     /**
@@ -90,6 +115,24 @@ class MediaService : MediaBrowserServiceCompat() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "MediaService onCreate")
+
+        // 初始化 AudioManager 与 AudioFocusRequest
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build()
+        }
+
+        // 初始化 SharedPreferences
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // 从 res/raw 扫描所有音频并解析元数据
         loadMusicList()
@@ -141,6 +184,9 @@ class MediaService : MediaBrowserServiceCompat() {
         updateNotification()
         
         sessionToken = mediaSession.sessionToken
+
+        // 恢复上次保存的播放状态（索引、进度、播放模式）
+        restorePlaybackState()
     }
 
     /**
@@ -351,32 +397,13 @@ class MediaService : MediaBrowserServiceCompat() {
                 Uri.parse("android.resource://${packageName}/raw/${musicItem.name}")
             )
             mediaPlayer.prepare()
-            val duration = mediaPlayer.duration.toLong()
             mediaPlayer.start()
             currentState = PlaybackStateCompat.STATE_PLAYING
-            
-            // 更新元数据
-            val metadata = MediaMetadataCompat.Builder()
-                .putString(
-                    MediaMetadataCompat.METADATA_KEY_MEDIA_ID,
-                    musicItem.resourceId.toString()
-                )
-                .putString(
-                    MediaMetadataCompat.METADATA_KEY_TITLE,
-                    musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name)
-                .putString(
-                    MediaMetadataCompat.METADATA_KEY_ARTIST,
-                    musicItem.artist.takeIf { it.isNotEmpty() }
-                        ?: getString(R.string.unknown_artist))
-                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
-                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, musicItem.coverArt)
-                .build()
-            mediaSession.setMetadata(metadata)
-            
+
+            updateMetadata(musicItem)
             updatePlaybackState()
             updateNotification()
-            
-            // 启动进度更新
+
             handler.post(progressUpdater)
         } catch (e: Exception) {
             Log.e(TAG, "Error playing music", e)
@@ -496,6 +523,178 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
+    // ==================== AudioFocus ====================
+
+    /**
+     * 音频焦点变化监听器。处理四种场景：
+     * GAIN（重获焦点，恢复播放/音量）、LOSS（永久失去，暂停）、
+     * LOSS_TRANSIENT（临时失去，暂停并记录恢复标记）、LOSS_TRANSIENT_CAN_DUCK（降低音量继续播放）。
+     */
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d(TAG, "AudioFocus: GAIN")
+                if (playOnAudioFocus) {
+                    mediaPlayer.start()
+                    currentState = PlaybackStateCompat.STATE_PLAYING
+                    updatePlaybackState()
+                    handler.post(progressUpdater)
+                    playOnAudioFocus = false
+                }
+                mediaPlayer.setVolume(FULL_VOLUME, FULL_VOLUME)
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                Log.d(TAG, "AudioFocus: LOSS")
+                playOnAudioFocus = false
+                if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+                    mediaPlayer.pause()
+                    currentState = PlaybackStateCompat.STATE_PAUSED
+                    updatePlaybackState()
+                    handler.removeCallbacks(progressUpdater)
+                    savePlaybackState()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.d(TAG, "AudioFocus: LOSS_TRANSIENT")
+                if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+                    playOnAudioFocus = true
+                    mediaPlayer.pause()
+                    currentState = PlaybackStateCompat.STATE_PAUSED
+                    updatePlaybackState()
+                    handler.removeCallbacks(progressUpdater)
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                Log.d(TAG, "AudioFocus: LOSS_TRANSIENT_CAN_DUCK")
+                if (currentState == PlaybackStateCompat.STATE_PLAYING) {
+                    mediaPlayer.setVolume(DUCK_VOLUME, DUCK_VOLUME)
+                }
+            }
+        }
+    }
+
+    /**
+     * 请求音频焦点。播放前必须调用，未获得焦点时不应开始播放。
+     * @return 是否成功获取焦点
+     */
+    private fun requestAudioFocus(): Boolean {
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.requestAudioFocus(audioFocusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+        return result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    /**
+     * 释放音频焦点。在停止播放或服务销毁时调用。
+     */
+    private fun abandonAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusChangeListener)
+        }
+    }
+
+    // ==================== 持久化 ====================
+
+    /**
+     * 保存当前播放状态（索引、进度、播放模式）到 SharedPreferences。
+     */
+    private fun savePlaybackState() {
+        val position = if (mediaPlayer.isPlaying || currentState == PlaybackStateCompat.STATE_PAUSED) {
+            mediaPlayer.currentPosition.toLong()
+        } else {
+            0L
+        }
+        prefs.edit()
+            .putInt(KEY_CURRENT_INDEX, currentIndex)
+            .putLong(KEY_CURRENT_POSITION, position)
+            .putString(KEY_PLAY_MODE, currentPlayMode.name)
+            .apply()
+        Log.d(TAG, "Saved state: index=$currentIndex, position=$position, mode=$currentPlayMode")
+    }
+
+    /**
+     * 从 SharedPreferences 恢复上次的播放状态。恢复索引、播放模式，并准备歌曲（不自动播放）。
+     */
+    private fun restorePlaybackState() {
+        currentIndex = prefs.getInt(KEY_CURRENT_INDEX, 0)
+        val savedPosition = prefs.getLong(KEY_CURRENT_POSITION, 0)
+        val savedMode = prefs.getString(KEY_PLAY_MODE, PlayMode.SEQUENTIAL.name)
+
+        currentPlayMode = try {
+            PlayMode.valueOf(savedMode ?: PlayMode.SEQUENTIAL.name)
+        } catch (e: Exception) {
+            PlayMode.SEQUENTIAL
+        }
+
+        if (currentIndex in musicList.indices) {
+            prepareMusic(currentIndex, savedPosition)
+        }
+        Log.d(TAG, "Restored state: index=$currentIndex, position=$savedPosition, mode=$currentPlayMode")
+    }
+
+    /**
+     * 仅准备歌曲（不自动开始播放）。用于服务启动时恢复上次状态，设置数据源、seek 到上次位置、更新元数据，状态置为 PAUSED。
+     * @param index 歌曲索引
+     * @param seekPosition 需要 seek 到的位置（毫秒），0 表示从头
+     */
+    private fun prepareMusic(index: Int, seekPosition: Long = 0) {
+        if (index < 0 || index >= musicList.size) return
+
+        currentIndex = index
+        val musicItem = musicList[index]
+
+        try {
+            mediaPlayer.reset()
+            mediaPlayer.setDataSource(
+                applicationContext,
+                Uri.parse("android.resource://${packageName}/raw/${musicItem.name}")
+            )
+            mediaPlayer.prepare()
+
+            if (seekPosition > 0 && seekPosition < mediaPlayer.duration) {
+                mediaPlayer.seekTo(seekPosition.toInt())
+            }
+
+            currentState = PlaybackStateCompat.STATE_PAUSED
+            updateMetadata(musicItem)
+            updatePlaybackState()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing music", e)
+        }
+    }
+
+    /**
+     * 将 MusicItem 的元数据设置到 MediaSession（标题、艺术家、时长、封面），供 MediaController 回调使用。
+     * @param musicItem 要更新的歌曲数据
+     */
+    private fun updateMetadata(musicItem: MusicItem) {
+        val duration = mediaPlayer.duration.toLong()
+        val metadata = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, musicItem.resourceId.toString())
+            .putString(
+                MediaMetadataCompat.METADATA_KEY_TITLE,
+                musicItem.title.takeIf { it.isNotEmpty() } ?: musicItem.name
+            )
+            .putString(
+                MediaMetadataCompat.METADATA_KEY_ARTIST,
+                musicItem.artist.takeIf { it.isNotEmpty() } ?: getString(R.string.unknown_artist)
+            )
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, musicItem.coverArt)
+            .build()
+        mediaSession.setMetadata(metadata)
+    }
+
     /**
      * 根据 currentState 和 mediaPlayer.currentPosition 构建 PlaybackStateCompat 并设置到 MediaSession，同时刷新通知栏。
      */
@@ -528,34 +727,38 @@ class MediaService : MediaBrowserServiceCompat() {
          */
         override fun onPlay() {
             if (currentState != PlaybackStateCompat.STATE_PLAYING) {
+                // 先请求音频焦点，未获得则不播放
+                if (!requestAudioFocus()) {
+                    Log.w(TAG, "Cannot acquire audio focus")
+                    showToast(getString(R.string.error_audio_focus_failed))
+                    return
+                }
+
                 if (musicList.isEmpty()) {
                     Log.w(TAG, "Cannot play: music list is empty")
                     Toast.makeText(this@MediaService, getString(R.string.playlist_empty), Toast.LENGTH_SHORT).show()
                     return
                 }
 
-                // 根据当前状态决定是开始播放还是恢复播放
                 if (currentState == PlaybackStateCompat.STATE_PAUSED) {
-                    // 暂停后恢复播放
                     mediaPlayer.start()
                     currentState = PlaybackStateCompat.STATE_PLAYING
                     updatePlaybackState()
                     handler.post(progressUpdater)
                 } else {
-                    // 首次播放或停止后重新播放
                     playMusic(currentIndex)
                 }
-
             }
         }
 
-        /** 用户请求暂停时，暂停 MediaPlayer 并停止进度更新 */
+        /** 用户请求暂停时，暂停 MediaPlayer、停止进度更新并保存播放状态 */
         override fun onPause() {
             if (currentState == PlaybackStateCompat.STATE_PLAYING) {
                 mediaPlayer.pause()
                 currentState = PlaybackStateCompat.STATE_PAUSED
                 updatePlaybackState()
                 handler.removeCallbacks(progressUpdater)
+                savePlaybackState()
             }
         }
 
@@ -593,38 +796,33 @@ class MediaService : MediaBrowserServiceCompat() {
             updatePlaybackState()
         }
 
-        /** 用户点击通知栏停止时调用：停止播放、取消进度更新、更新状态、移除前台通知并 stopSelf */
+        /** 用户点击通知栏停止时调用：保存状态、停止播放、释放焦点、移除前台通知并 stopSelf */
         override fun onStop() {
+            savePlaybackState()
+
             if (mediaPlayer.isPlaying) {
                 mediaPlayer.stop()
             }
-            
-            // 2. 停止进度更新
             handler.removeCallbacks(progressUpdater)
-            
-            // 3. 更新状态并通知客户端
             currentState = PlaybackStateCompat.STATE_STOPPED
             updatePlaybackState()
-            
-            // 4. 停止前台服务，移除通知
             stopForeground(STOP_FOREGROUND_REMOVE)
-            
-            // 5. 释放音频焦点（如果有实现）
-            // abandonAudioFocus()
-            
-            // 6. 停止服务
+            abandonAudioFocus()
             stopSelf()
         }
     }
 
-    /** 任务被移除（用户划掉应用）时停止服务 */
+    /** 任务被移除（用户划掉应用）时保存播放状态并停止服务 */
     override fun onTaskRemoved(rootIntent: Intent?) {
+        savePlaybackState()
         super.onTaskRemoved(rootIntent)
         stopSelf()
     }
 
-    /** 服务销毁时移除进度更新、释放 MediaSession 与 MediaPlayer、释放 WakeLock */
+    /** 服务销毁时保存状态、释放焦点、移除进度更新、释放 MediaSession 与 MediaPlayer、释放 WakeLock */
     override fun onDestroy() {
+        savePlaybackState()
+        abandonAudioFocus()
         handler.removeCallbacks(progressUpdater)
         mediaSession.release()
         mediaPlayer.release()
