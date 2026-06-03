@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -57,6 +58,11 @@ class MediaService : MediaBrowserServiceCompat() {
     private val handler = Handler(Looper.getMainLooper())
     /** 周期性更新播放进度的 Runnable */
     private lateinit var progressUpdater: Runnable
+
+    /** 用于避免重复写入相同进度（SharedPreferences 写入有成本） */
+    private var lastSavedProgressPositionMs: Long = -1L
+    /** seekTo 刚触发后的一小段时间内，避免 progressUpdater 用旧 currentPosition 覆盖保存的目标进度 */
+    private var ignoreProgressSaveUntilElapsedMs: Long = 0L
 
     // ---- AudioFocus 相关 ----
     /** 系统音频管理器，用于请求和释放音频焦点 */
@@ -157,6 +163,15 @@ class MediaService : MediaBrowserServiceCompat() {
         progressUpdater = Runnable {
             if (currentState == PlaybackStateCompat.STATE_PLAYING) {
                 updatePlaybackState()
+                // 进度更新属于关键事件：每次播放进度刷新时保存一次（但若进度未变化则跳过）
+                val currentPosition = mediaPlayer.currentPosition.toLong()
+                if (SystemClock.elapsedRealtime() >= ignoreProgressSaveUntilElapsedMs) {
+                    if (currentPosition != lastSavedProgressPositionMs) {
+                        lastSavedProgressPositionMs = currentPosition
+                        savePlaybackState()
+                    }
+                }
+                // 否则：seek 过程中 progressUpdater 可能读到旧值，不保存，等待下一次时机
                 handler.postDelayed(progressUpdater, PROGRESS_UPDATE_INTERVAL)
             }
         }
@@ -345,18 +360,18 @@ class MediaService : MediaBrowserServiceCompat() {
                 val resourceId = field.getInt(null)
                 val resourceName = field.name
                 val musicItem = MusicItem(resourceName, resourceId)
-                
+
                 // 获取音频文件的元数据
                 try {
                     val retriever = MediaMetadataRetriever()
                     val uri = Uri.parse("android.resource://${packageName}/raw/${resourceName}")
                     retriever.setDataSource(applicationContext, uri)
-                    
+
                     musicItem.title =
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
                     musicItem.artist =
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-                    
+
                     // 提取专辑封面并压缩
                     val artBytes = retriever.embeddedPicture
                     if (artBytes != null) {
@@ -366,12 +381,12 @@ class MediaService : MediaBrowserServiceCompat() {
                         musicItem.coverArt =
                             BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, options)
                     }
-                    
+
                     retriever.release()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error getting metadata for $resourceName", e)
                 }
-                
+
                 musicList.add(musicItem)
             }
         } catch (e: Exception) {
@@ -403,6 +418,9 @@ class MediaService : MediaBrowserServiceCompat() {
             updateMetadata(musicItem)
             updatePlaybackState()
             updateNotification()
+
+            // 切歌/开始播放属于关键事件：保存当前 index 与起始/当前进度，便于下次恢复准确定位。
+            savePlaybackState()
 
             handler.post(progressUpdater)
         } catch (e: Exception) {
@@ -466,6 +484,9 @@ class MediaService : MediaBrowserServiceCompat() {
             PlayMode.SHUFFLE -> PlayMode.REPEAT_ONE
             PlayMode.REPEAT_ONE -> PlayMode.SEQUENTIAL
         }
+
+        // 播放模式切换属于关键事件：保存模式，避免被系统杀死后恢复错误的播放模式。
+        savePlaybackState()
     }
 
     /**
@@ -562,6 +583,8 @@ class MediaService : MediaBrowserServiceCompat() {
                     currentState = PlaybackStateCompat.STATE_PAUSED
                     updatePlaybackState()
                     handler.removeCallbacks(progressUpdater)
+                    // 临时失去焦点后我们会暂停：属于关键状态变化，保存以便恢复
+                    savePlaybackState()
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -608,19 +631,29 @@ class MediaService : MediaBrowserServiceCompat() {
     /**
      * 保存当前播放状态（索引、进度、播放模式）到 SharedPreferences。
      */
-    private fun savePlaybackState() {
-        val position = if (mediaPlayer.isPlaying || currentState == PlaybackStateCompat.STATE_PAUSED) {
-            mediaPlayer.currentPosition.toLong()
-        } else {
-            0L
+    private fun savePlaybackState(positionOverride: Long? = null) {
+        // 注意：seekTo(pos) 是异步的，如果立刻读取 currentPosition 可能还是旧值。
+        // 因此在 seek 的关键事件里允许用 positionOverride 直接写入目标位置。
+        val position = when {
+            positionOverride != null -> positionOverride
+            mediaPlayer.isPlaying || currentState == PlaybackStateCompat.STATE_PAUSED -> mediaPlayer.currentPosition.toLong()
+            else -> 0L
         }
-        prefs.edit()
+        // 使用 commit() 同步落盘：在“任务管理器划掉/进程被回收”场景下，
+        // apply() 可能来不及完成写入导致恢复数据丢失。
+        val ok = prefs.edit()
             .putInt(KEY_CURRENT_INDEX, currentIndex)
             .putLong(KEY_CURRENT_POSITION, position)
             .putString(KEY_PLAY_MODE, currentPlayMode.name)
-            .apply()
-        Log.d(TAG, "Saved state: index=$currentIndex, position=$position, mode=$currentPlayMode")
+            .commit()
+        // 如果是 seek 的关键保存点，更新进度去重基准，避免 progressUpdater 用旧值覆盖。
+        if (positionOverride != null) {
+            lastSavedProgressPositionMs = positionOverride
+        }
+        // 提升到 I（Info），便于你在 logcat 中更容易定位“是否真的写入成功”
+        Log.i(TAG, "Saved state: commit=$ok index=$currentIndex, position=$position, mode=$currentPlayMode")
     }
+
 
     /**
      * 从 SharedPreferences 恢复上次的播放状态。恢复索引、播放模式，并准备歌曲（不自动播放）。
@@ -636,10 +669,11 @@ class MediaService : MediaBrowserServiceCompat() {
             PlayMode.SEQUENTIAL
         }
 
+        Log.i(TAG, "Restore state read: index=$currentIndex, position=$savedPosition, mode=$savedMode resolved=$currentPlayMode")
         if (currentIndex in musicList.indices) {
             prepareMusic(currentIndex, savedPosition)
         }
-        Log.d(TAG, "Restored state: index=$currentIndex, position=$savedPosition, mode=$currentPlayMode")
+        Log.i(TAG, "Restored state applied: index=$currentIndex, position=$savedPosition, mode=$currentPlayMode")
     }
 
     /**
@@ -661,8 +695,13 @@ class MediaService : MediaBrowserServiceCompat() {
             )
             mediaPlayer.prepare()
 
-            if (seekPosition > 0 && seekPosition < mediaPlayer.duration) {
-                mediaPlayer.seekTo(seekPosition.toInt())
+            // 注意：恢复播放时 savedPosition 可能等于/略大于 duration，
+            // 也可能因为某些机型返回的 duration 暂时为 0。
+            // 这里对 seekPosition 做 clamp：只有 duration 有效时才 seek，且不会因为严格 < 判断而跳过。
+            val duration = mediaPlayer.duration
+            if (duration > 0) {
+                val clampedPosition = seekPosition.coerceIn(0L, duration.toLong() - 1).toInt()
+                mediaPlayer.seekTo(clampedPosition)
             }
 
             currentState = PlaybackStateCompat.STATE_PAUSED
@@ -745,6 +784,9 @@ class MediaService : MediaBrowserServiceCompat() {
                     currentState = PlaybackStateCompat.STATE_PLAYING
                     updatePlaybackState()
                     handler.post(progressUpdater)
+
+                    // 恢复播放属于关键事件：保存当前进度与状态。
+                    savePlaybackState()
                 } else {
                     playMusic(currentIndex)
                 }
@@ -792,8 +834,13 @@ class MediaService : MediaBrowserServiceCompat() {
 
         /** 用户拖动进度到 pos 时调用，将 MediaPlayer seek 到指定位置并更新状态 */
         override fun onSeekTo(pos: Long) {
+            Log.i(TAG, "onSeekTo callback: pos=$pos (will save positionOverride)")
             mediaPlayer.seekTo(pos.toInt())
             updatePlaybackState()
+            // 手动 seek 后立刻保存，避免用户紧接着从任务管理器划掉导致最后位置丢失
+            savePlaybackState(positionOverride = pos)
+            // 在 seek 刚触发的短时间内禁用 progressUpdater 的保存，防止旧 currentPosition 覆盖目标进度
+            ignoreProgressSaveUntilElapsedMs = SystemClock.elapsedRealtime() + 800L
         }
 
         /** 用户点击通知栏停止时调用：保存状态、停止播放、释放焦点、移除前台通知并 stopSelf */
