@@ -85,114 +85,120 @@
 
 ### 1.1 场景与目标（2min）
 
-**为什么要加固这里？**
+**观察到的现象**
 
-MediaCenter 的播放功能已经完备，但开发态实现中有一个在车机生产环境里会被放大的问题：`MediaService.onCreate()` 里 `loadMusicList()` 是**同步执行**的。
+学员打开 App，点图标，通知栏迟迟不出。logcat 里 `MediaService onCreate` 之后的日志要等很久才出现。App 感觉"反应慢"。
 
-`loadMusicList()` 遍历 `res/raw` 下所有音频文件，逐个调用 `MediaMetadataRetriever` 读取元数据（磁盘 I/O + 解码），全部跑在**主线程**上。如果有 50 首本地音乐，这一步可能吃掉 800ms-2000ms，直接拖累冷启动时间。
-
-用户点击 App 图标时，调用链是：
+用户点图标时，实际调用链是：
 
 ```
 MainActivity.onCreate()
-  → startForegroundService(MediaService)    // 启动服务
+  → startForegroundService(MediaService)    // 启动后台服务
   → MediaService.onCreate()                // 在主线程执行
-    → loadMusicList()                     // ← 这里是瓶颈：同步读元数据
-    → mediaPlayer = MediaPlayer()
-    → mediaSession = MediaSessionCompat()
-    → restorePlaybackState()
+    → ... 初始化代码 ...
+  → MediaService.onStartCommand()
+  → updateNotification()                  // 通知出现
 ```
 
-**本节目标**：把 `loadMusicList()` 改为异步执行，让 `onCreate()` **立即返回**，前台通知瞬间出现。
+**本节目标**：测量 `onCreate()` 各阶段耗时，找出哪一步最慢，再针对性修复。
 
 ### 1.2 量化现状（3 min）
 
-**定位当前实现**
+**原则：先测量，再下结论。不要靠猜。**
 
-1. 打开 `MediaService.kt`
-2. 找到第 151 行——`loadMusicList()` 调用，位于 `onCreate()` 内
-
-```kotlin
-// MediaService.kt 第 144 行（改动前）
-loadMusicList()
-Log.d(TAG, "MediaService loaded ${musicList.size} music items")
-```
-
-3. 找到第 365-407 行——`loadMusicList()` 方法本体：
-
-```kotlin
-// MediaService.kt 第 356-396 行（改动前）
-private fun loadMusicList() {
-    try {
-        val fields: Array<Field> = R.raw::class.java.fields
-        for (field in fields) {
-            val resourceId = field.getInt(null)
-            val resourceName = field.name
-            val musicItem = MusicItem(resourceName, resourceId)
-
-            // 获取音频文件的元数据
-            try {
-                val retriever = MediaMetadataRetriever()
-                val uri = Uri.parse("android.resource://${packageName}/raw/${resourceName}")
-                retriever.setDataSource(applicationContext, uri)   // ← 磁盘 I/O
-
-                musicItem.title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
-                musicItem.artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-
-                val artBytes = retriever.embeddedPicture
-                if (artBytes != null) {
-                    val options = BitmapFactory.Options().apply { inSampleSize = IMAGE_COMPRESSION_RATIO }
-                    musicItem.coverArt = BitmapFactory.decodeByteArray(artBytes, 0, artBytes.size, options)
-                }
-                retriever.release()
-            } catch (e: Exception) { ... }
-
-            musicList.add(musicItem)
-        }
-    } catch (e: Exception) { ... }
-}
-```
-
-**量化数据（录屏展示）**
-
-在 `onCreate()` 开头和 `loadMusicList()` 返回后分别打点：
+打开 `MediaService.kt`，在 `onCreate()` 里加打点，分段计时：
 
 ```kotlin
 override fun onCreate() {
     super.onCreate()
-    val startTime = System.nanoTime()
-    Log.d(TAG, "onCreate start")
+    val t0 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_audioinit start")
 
-    // ... 中间代码 ...
+    audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(...)
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener(audioFocusChangeListener)
+            .build()
+    }
+    prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val t1 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_audioinit done: ${(t1-t0)/1_000_000}ms")
 
+    // ↓ 这里疑似是瓶颈，先记录开始时间
+    val t2 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_loadmusic start")
     loadMusicList()
-    val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
-    Log.i(TAG, "onCreate end, loadMusicList took ${elapsedMs}ms")
+    val t3 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_loadmusic done: ${(t3-t2)/1_000_000}ms, loaded ${musicList.size} items")
+    Log.d(TAG, "MediaService loaded ${musicList.size} music items")
+
+    val t4 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_playerinit start")
+    mediaPlayer = MediaPlayer().apply { ... }
+    progressUpdater = Runnable { ... }
+    val t5 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_playerinit done: ${(t5-t4)/1_000_000}ms")
+
+    val t6 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_sessioninit start")
+    mediaSession = MediaSessionCompat(this, ...).apply { ... }
+    createNotificationChannel()
+    updatePlaybackState()
+    updateNotification()
+    sessionToken = mediaSession.sessionToken
+    val t7 = System.nanoTime()
+    Log.d(TAG, "[PROFILE] phase_sessioninit done: ${(t7-t6)/1_000_000}ms")
 }
 ```
 
-录屏展示：播放 60 秒，log 打印 `onCreate end, loadMusicList took XXXms`——这个数字就是我们要改进的基线（通常 500ms-2000ms）。
+录屏：打开 App，logcat 过滤 `[PROFILE]`，观察各阶段耗时：
+
+```
+[PROFILE] phase_audioinit  done:   2ms
+[PROFILE] phase_loadmusic  done: 1234ms   ← ← ← ← 这里是问题
+[PROFILE] phase_playerinit done:   3ms
+[PROFILE] phase_sessioninit done:  15ms
+```
+
+**发现**：90% 以上的时间都卡在 `phase_loadmusic`。打开 `loadMusicList()` 源码，确认原因是逐个调用 `MediaMetadataRetriever` 做磁盘 I/O + 解码，全部跑在主线程：
+
+```kotlin
+// MediaService.kt 第 365-407 行
+private fun loadMusicList() {
+    // ...
+    val retriever = MediaMetadataRetriever()
+    val uri = Uri.parse("android.resource://${packageName}/raw/${resourceName}")
+    retriever.setDataSource(applicationContext, uri)   // ← 磁盘 I/O，在主线程
+    musicItem.title  = retriever.extractMetadata(...)  // ← 解码，在主线程
+    musicItem.artist = retriever.extractMetadata(...)
+    val artBytes = retriever.embeddedPicture          // ← 图片解码，在主线程
+    retriever.release()
+    // ...
+}
+```
+
+**结论**：`loadMusicList()` 是主线程 I/O 热点。需要把它移出 `onCreate()`，放到后台线程执行。
 
 ### 1.3 原理拆解（3 min）
 
-**关键认知：Service.onCreate() 在主线程执行，阻塞则 App 无响应**
+**为什么这里会成为瓶颈？**
 
-Android 的 Service 生命周期回调（`onCreate()`、`onStartCommand()`）默认在主线程运行。`onCreate()` 里做耗时的同步操作，会直接拖慢冷启动——用户点图标后，通知栏出现得很慢，感觉 App "没反应"。
+Android 的 Service 生命周期回调（`onCreate()`、`onStartCommand()`）默认在主线程运行。`onCreate()` 里所有代码都是同步串行执行的——前一行跑完，后一行才开始。
 
-**为什么元数据读取适合异步？**
+`loadMusicList()` 内部对每个音频文件调用 `MediaMetadataRetriever.setDataSource()`（打开文件 + 读取头数据）和 `extractMetadata()`（解码），这些操作涉及磁盘 I/O + 软解码，耗时长且与主线程无关，但偏偏被绑在了主线程上。
 
-- `MediaMetadataRetriever` 的 `setDataSource()` 和 `extractMetadata()` 是**磁盘 I/O**，不是 CPU 密集型
-- 元数据读取不需要在 onCreate 同步完成，`musicList` 加载完成后 `restorePlaybackState()` 再执行即可
-- 用协程（`Dispatchers.IO`）处理 I/O 操作是 Android 官方推荐方式
+**怎么修？思路很简单：把 I/O 操作移出主线程。**
 
-**协程的作用域设计**
-
-- 用 `MainScope()`（等价于 `CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())`）与 Service 生命周期绑定
-- `onDestroy()` 中调用 `serviceScope.cancel()` 确保不泄漏
+- `MediaMetadataRetriever` 的操作是 **I/O bound**，不是 CPU bound
+- `musicList` 加载完成后 `restorePlaybackState()` 再执行即可，不需要等
+- 用协程（`Dispatchers.IO`）是 Android 官方推荐的异步 I/O 方式
+- 用 `MainScope()` 与 Service 生命周期绑定，`onDestroy()` 时 `cancel()` 防止泄漏
 
 ### 1.4 精确改动（7 min）
 
-> 改动集中在 `MediaService.kt`，只改 5 处，强调"改动小、收益大"。
+> 测量发现了问题，现在动手修复。改动集中在 `MediaService.kt`，只改 5 处。
 
 **改动 1：新增协程 import（第 35-40 行）**
 
@@ -284,93 +290,49 @@ override fun onDestroy() {
 }
 ```
 
-### 1.5 验证与量化（3 min）
+### 1.5 验证效果（3 min）
 
-**方法一：logcat 打点（精确，但需要改代码）**
+> 改完之后，重新测量，对比加固前后的数字。
 
-在 `onCreate()` 开头和 `sessionToken = mediaSession.sessionToken` 之后分别打点，计算同步阶段的耗时：
+先把 1.2 加的打点代码做两处小改动，就可以同时测同步部分耗时和通知出现时间：
 
 ```kotlin
-// MediaService.kt（改动后）
+// 1. onCreate() 结尾的同步计时，移到 sessionToken 之后
+//    原来 loadMusicList() 是同步的，整段都算同步耗时
+//    改为协程后，loadMusicList() 不在同步段里，数字会显著变小
 override fun onCreate() {
     super.onCreate()
     val onCreateStart = System.nanoTime()
-    Log.d(TAG, "onCreate start")
-
-    // ... 全部同步初始化代码（协程内的 loadMusicList 不计入）...
-
-    sessionToken = mediaSession.sessionToken  // ← 同步部分结束点（第 212 行）
-    val onCreateSyncEnd = System.nanoTime()
-    val syncElapsedMs = (onCreateSyncEnd - onCreateStart) / 1_000_000
-    Log.i(TAG, "onCreate sync part done, took ${syncElapsedMs}ms")
-}
-```
-
-- **加固前**：`onCreate()` 总耗时 = 同步耗时 = 500ms-2000ms（全部卡在主线程）
-- **加固后**：`onCreate()` 同步部分耗时 ≈ **< 50ms**（协程异步加载，通知瞬间出现）
-
-**方法二：logcat 测量通知出现时间（测用户体验）**
-
-`am start -W` 测的是 **Activity** 冷启动（`onCreate` → `onResume`），而 `startForegroundService()` 是**异步**的——它不等待 `MediaService.onCreate()` 完成就返回了。所以在这个优化里 `am start -W` **看不出差异**。
-
-正确的测量对象是：**用户点图标 → 前台通知出现**。用 logcat 两次打点即可：
-
-```kotlin
-// MediaService.kt - onCreate() 开头
-private var serviceStartTimeNanos = 0L
-private var firstNotificationShown = false
-
-override fun onCreate() {
-    super.onCreate()
-    serviceStartTimeNanos = System.nanoTime()
-    Log.d(TAG, "MediaService onCreate start")
-    // ...
+    // ... 同 1.2 的打点代码，但移除 phase_loadmusic 部分 ...
+    sessionToken = mediaSession.sessionToken
+    val syncElapsedMs = (System.nanoTime() - onCreateStart) / 1_000_000
+    Log.i(TAG, "[VERIFY] onCreate sync part: ${syncElapsedMs}ms")
 }
 
-// MediaService.kt - updateNotification() 第一次出现时
+// 2. updateNotification() 里的通知出现计时（沿用 1.2 的代码）
 private fun updateNotification() {
     if (!firstNotificationShown) {
         firstNotificationShown = true
         val elapsedMs = (System.nanoTime() - serviceStartTimeNanos) / 1_000_000
-        Log.i(TAG, "First notification appeared: ${elapsedMs}ms after onCreate")
+        Log.i(TAG, "[VERIFY] First notification appeared: ${elapsedMs}ms")
     }
     // ...
 }
 ```
 
-录屏时：
-```bash
-adb logcat -v threadtime | grep "First notification appeared"
-```
+**前后对比**
 
-| 指标 | 加固前 | 加固后 |
-|------|--------|--------|
-| 通知出现时间 | 500-2000ms（同步等 loadMusicList） | **< 50ms**（异步，后台加载） |
+| 指标 | 加固前（1.2 测出） | 加固后 |
+|------|--------------------|--------|
+| `onCreate()` 同步部分耗时 | ~1200ms（大部分是 `loadMusicList`） | **< 50ms** |
+| 通知出现时间 | ~1200ms | **< 50ms** |
 
-**方法一 vs 方法二对比**
+录屏步骤：
+1. 先跑加固前 APK，打开 App，logcat 记录两个数字作为基线
+2. 应用本节改动
+3. 再跑加固后 APK，同一机器同一命令，两个数字都大幅下降
 
-| 维度 | logcat 打点（方法一） | 通知出现时间（方法二） |
-|------|----------------------|----------------------|
-| 需要改代码 | 是（onCreate 内打点） | 是（onCreate + updateNotification） |
-| 测量范围 | `MediaService.onCreate()` 同步阶段 | 用户感知：图标→通知 |
-| 适合场景 | 验证优化效果（同步部分变快） | 验证用户体验（通知瞬间出现） |
-| 推荐顺序 | **①** | **②** |
-
-> **方法三（可选）：Android Studio CPU Profiler** → 选择 **"Java/Kotlin"** 模式，可看完整调用栈和各函数耗时分布。
-
-**录屏展示步骤**：
-
-1. 先用方法一/方法二展示加固前基线（数字 500-2000ms）
-2. 改代码，加固
-3. 再次测量，数字显著下降
-
-**用户体验差异**
-
-| 场景 | 加固前 | 加固后 |
-|------|--------|--------|
-| 点击图标 | 等待 500-2000ms，通知才出现 | 通知几乎瞬间出现 |
-| 后台加载 | 无 | 通知出现后，后台异步加载元数据 |
-| 播放位置恢复 | 即时 | 加载完成后恢复（有短暂延迟，用户无感知） |
+修完之后，学员会感知到：点图标后，通知栏瞬间出现，体验和优化前完全不同。
 
 ---
 
